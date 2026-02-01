@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ממיר תנועות בנק ואשראי - Valley Bank + PayEm</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #f5f7fa 0%, #e8f5e9 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #2e7d32 0%, #66bb6a 100%); color: white; padding: 25px; text-align: center; }
+        .header h1 { font-size: 2em; margin-bottom: 8px; }
+        .header p { opacity: 0.9; }
+        .main-content { padding: 30px; }
+        .step-indicator { display: flex; justify-content: center; margin-bottom: 30px; gap: 20px; }
+        .step { display: flex; align-items: center; gap: 10px; }
+        .step-number { width: 35px; height: 35px; border-radius: 50%; background: #e0e0e0; color: #666; display: flex; align-items: center; justify-content: center; font-weight: bold; }
+        .step.active .step-number { background: #4caf50; color: white; }
+        .step.completed .step-number { background: #2e7d32; color: white; }
+        .upload-section { background: #f5f5f5; border: 2px dashed #9e9e9e; border-radius: 10px; padding: 30px; text-align: center; transition: all 0.3s ease; margin-bottom: 25px; }
+        .upload-section:hover { border-color: #4caf50; background: #e8f5e9; }
+        .upload-section.active { border-color: #2e7d32; background: #c8e6c9; }
+        .file-input { display: none; }
+        .btn { padding: 12px 30px; border: none; border-radius: 25px; font-size: 1.1em; cursor: pointer; transition: all 0.3s ease; margin: 5px; font-weight: 500; }
+        .btn:disabled { background: #bdbdbd !important; cursor: not-allowed; transform: none !important; }
+        .btn-green { background: #4caf50; color: white; }
+        .btn-green:hover { background: #45a049; transform: translateY(-2px); }
+        .btn-blue { background: #2196f3; color: white; }
+        .btn-blue:hover { background: #1976d2; transform: translateY(-2px); }
+        .btn-orange { background: #ff9800; color: white; }
+        .btn-orange:hover { background: #f57c00; transform: translateY(-2px); }
+        .btn-red { background: #f44336; color: white; }
+        .btn-red:hover { background: #d32f2f; transform: translateY(-2px); }
+        .btn-sm { padding: 8px 18px; font-size: 0.9em; }
+        .status-message { padding: 12px 20px; border-radius: 8px; margin: 15px 0; display: none; animation: slideIn 0.4s ease; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+        .success { background: #c8e6c9; color: #1b5e20; border-right: 4px solid #4caf50; }
+        .error { background: #ffcdd2; color: #b71c1c; border-right: 4px solid #f44336; }
+        .info { background: #bbdefb; color: #0d47a1; border-right: 4px solid #2196f3; }
+        .warning { background: #fff3e0; color: #e65100; border-right: 4px solid #ff9800; }
+        .file-type-badge { display: inline-block; padding: 8px 20px; border-radius: 20px; font-weight: bold; font-size: 1.1em; margin: 10px 0; }
+        .badge-valley { background: #e8f5e9; color: #2e7d32; border: 2px solid #4caf50; }
+        .badge-payem { background: #e3f2fd; color: #1565c0; border: 2px solid #42a5f5; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin: 20px 0; }
+        .stat-card { padding: 15px; border-radius: 10px; text-align: center; color: white; }
+        .stat-card.green { background: linear-gradient(135deg, #4caf50, #81c784); }
+        .stat-card.blue { background: linear-gradient(135deg, #2196f3, #64b5f6); }
+        .stat-card.orange { background: linear-gradient(135deg, #ff9800, #ffb74d); }
+        .stat-card.gray { background: linear-gradient(135deg, #78909c, #b0bec5); }
+        .stat-value { font-size: 1.6em; font-weight: bold; }
+        .stat-label { font-size: 0.85em; opacity: 0.95; margin-top: 4px; }
+        .preview-section { margin-top: 25px; display: none; }
+        .preview-table { width: 100%; overflow-x: auto; border-radius: 8px; box-shadow: 0 3px 10px rgba(0,0,0,0.08); max-height: 500px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th { background: #4caf50; color: white; padding: 10px; text-align: right; font-weight: 600; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+        td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; text-align: right; white-space: nowrap; }
+        tr:hover { background: #f5f5f5; }
+        tr:nth-child(even) { background: #fafafa; }
+        .amount-debit { color: #d32f2f; }
+        .amount-credit { color: #388e3c; }
+        .file-info { background: #e8f5e9; padding: 12px; border-radius: 8px; margin: 10px 0; border-right: 3px solid #4caf50; text-align: right; }
+        .progress-bar { width: 100%; height: 6px; background: #e0e0e0; border-radius: 3px; overflow: hidden; margin: 15px 0; display: none; }
+        .progress-fill { height: 100%; background: #4caf50; width: 0%; transition: width 0.3s ease; }
+        .history-panel { background: #fafafa; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px; margin-top: 30px; }
+        .history-panel h3 { margin-bottom: 15px; color: #424242; cursor: pointer; }
+        .history-panel h3::before { content: ''; display: inline-block; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #666; margin-left: 8px; transition: transform 0.3s; }
+        .history-panel.collapsed h3::before { transform: rotate(-90deg); }
+        .history-panel.collapsed .history-content { display: none; }
+        .history-stats { display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap; }
+        .history-stat { background: white; padding: 10px 15px; border-radius: 8px; border: 1px solid #e0e0e0; }
+        .dedup-info { background: #fff3e0; border: 1px solid #ffcc02; border-radius: 8px; padding: 15px; margin: 15px 0; display: none; }
+        .dedup-info .new-count { color: #2e7d32; font-weight: bold; font-size: 1.2em; }
+        .dedup-info .dup-count { color: #ff6f00; font-weight: bold; font-size: 1.2em; }
+        .process-options { margin: 15px 0; display: none; }
+        .process-options label { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+        .process-options input[type="checkbox"] { width: 18px; height: 18px; }
+        .hidden { display: none !important; }
+        .loader { display: none; width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top: 4px solid #4caf50; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .no-coa { background: #fff9c4 !important; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>ממיר תנועות בנק ואשראי</h1>
+        <p>Valley Bank + PayEm → Excel | זיהוי אוטומטי + עיבוד מצטבר</p>
+    </div>
+    <div class="main-content">
+        <div class="step-indicator">
+            <div class="step active" id="step1"><div class="step-number">1</div><span>העלאת קובץ</span></div>
+            <div class="step" id="step2"><div class="step-number">2</div><span>עיבוד נתונים</span></div>
+            <div class="step" id="step3"><div class="step-number">3</div><span>הורדת Excel</span></div>
+        </div>
+        <div class="upload-section" id="uploadSection">
+            <h2>העלה קובץ CSV</h2>
+            <p style="margin:15px 0;color:#757575;">גרור לכאן או לחץ לבחירה (Valley Bank / PayEm)</p>
+            <input type="file" id="fileInput" class="file-input" accept=".csv">
+            <button class="btn btn-green" onclick="document.getElementById('fileInput').click()">בחר קובץ CSV</button>
+            <div id="fileInfo"></div>
+            <div id="fileTypeBadge" style="display:none;text-align:center;"></div>
+        </div>
+        <div class="status-message" id="statusMessage"></div>
+        <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="dedup-info" id="dedupInfo">
+            <span>נמצאו סה"כ <span id="totalParsed">0</span> תנועות: </span>
+            <span class="new-count" id="newCountLabel">0 חדשות</span>,
+            <span class="dup-count" id="dupCountLabel">0 כבר עובדו</span>
+        </div>
+        <div class="process-options" id="processOptions">
+            <label><input type="checkbox" id="newOnlyCheck" checked> עבד רק תנועות חדשות (דלג על כפילויות)</label>
+        </div>
+        <div style="text-align:center;margin:15px 0;">
+            <button class="btn btn-blue hidden" id="processBtn" onclick="app.processData()">התחל עיבוד נתונים</button>
+        </div>
+        <div class="loader" id="loader"></div>
+        <div class="stats hidden" id="statsSection"></div>
+        <div class="preview-section" id="previewSection">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h3>תצוגה מקדימה</h3>
+                <span id="previewInfo" style="color:#757575;"></span>
+            </div>
+            <div class="preview-table"><table id="previewTable"><thead id="previewHead"></thead><tbody id="previewBody"></tbody></table></div>
+        </div>
+        <div style="text-align:center;margin:20px 0;">
+            <button class="btn btn-orange hidden" id="downloadBtn" onclick="app.downloadExcel()">הורד קובץ Excel</button>
+        </div>
+        <div class="history-panel" id="historyPanel">
+            <h3 onclick="document.getElementById('historyPanel').classList.toggle('collapsed')">היסטוריית עיבוד ואחסון</h3>
+            <div class="history-content">
+                <div class="history-stats" id="historyStats"></div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button class="btn btn-sm btn-green" onclick="app.exportHistory()">ייצא היסטוריה (JSON)</button>
+                    <input type="file" id="historyImportInput" accept=".json" style="display:none" onchange="app.importHistory(event)">
+                    <button class="btn btn-sm btn-blue" onclick="document.getElementById('historyImportInput').click()">ייבא היסטוריה</button>
+                    <button class="btn btn-sm btn-orange" onclick="app.exportCoaLookup()">ייצא טבלת ח"ן</button>
+                    <input type="file" id="coaImportInput" accept=".json" style="display:none" onchange="app.importCoaLookup(event)">
+                    <button class="btn btn-sm btn-blue" onclick="document.getElementById('coaImportInput').click()">ייבא טבלת ח"ן</button>
+                    <button class="btn btn-sm btn-red" onclick="app.clearHistory()">נקה היסטוריה</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== COA LOOKUP TABLES =====
+const PAYEM_COA_DEFAULT = {"LEVERAGED OUTBOUND|Brandlight Inc.":["502010","911000"],"Upwork|Brandlight Inc.":["502010","962006"],"Calendly|Brandlight Inc.":["502010","901009"],"Linkedin|Brandlight Inc.":["911004","502010"],"CONTENT ZEN|Brandlight Inc.":["502010","901009"],"PAYPAL *MADHAVMISTR|Brandlight Inc.":["502010","964009"],"TELMA SHLOMO|Brandlight AI LTD":["300001","921008"],"Medium|Brandlight Inc.":["502010","901009"],"OpenAI|Brandlight Inc.":["901009","502010"],"TAPLIO.COM/B|Brandlight Inc.":["502010","911004"],"UPS|Brandlight AI LTD":["300001","965001"],"PayEm Cash Back|Brandlight Inc.":["969001","502010"],"UPWORK * -842329291|Brandlight Inc.":["502010","962006"],"MISRAD HAPNIM|Brandlight Inc.":["502010","964009"],"AIRBNB * HM8RCRNBBT|Brandlight AI LTD":["300001","921008"],"AIRALO|Brandlight Inc.":["502010","921008"],"ISRAIR FLIGHT AND TOURISM|Brandlight Inc.":["502010","921008"],"DELAWARE CORP & TAX WE|Brandlight Inc.":["502010","964010"],"UPWORK * -844557510|Brandlight Inc.":["502010","962006"],"GT GET TAXI SYSTEMS LTD|Brandlight Inc.":["502010","965001"],"BITLY.COM|Brandlight Inc.":["502010","901009"],"Google|Brandlight Inc.":["502010","901009"],"UPWORK * -846744433|Brandlight Inc.":["502010","962006"],"Bolt|Brandlight Inc.":["502010","921008"],"BOLT.EU/O/2509151956|Brandlight Inc.":["502010","921008"],"BOLT.EU/O/2509151958|Brandlight Inc.":["502010","921008"],"PAIN FAUBOURG|Brandlight Inc.":["502010","963000"],"HORTENSE|Brandlight Inc.":["502010","964009"],"RESTAUR MARLOE|Brandlight Inc.":["502010","963000"],"BOLT.EU/O/2509170231|Brandlight Inc.":["502010","965001"],"BOLT.EU/O/2509170235|Brandlight Inc.":["502010","965001"],"Uber|Brandlight Inc.":["502010","965001"],"GRAN VIEW APARTMENTS|Brandlight Inc.":["502010","921008"],"Subway|Brandlight Inc.":["502010","963000"],"GranVia52|Brandlight Inc.":["502010","963000"],"MARKET TUDESCOS|Brandlight Inc.":["502010","963000"],"STARBUCKS GRAN VIA 46|Brandlight Inc.":["502010","963000"],"PAIPAI|Brandlight Inc.":["502010","963000"],"AEROP. ADOLFO SUAREZ MADR|Brandlight Inc.":["502010","963000"],"BARCELONA AIRPORTHOTEL|Brandlight Inc.":["502010","921008"],"BO I FRESC|Brandlight Inc.":["502010","963000"],"LA TORNA CATERINA|Brandlight Inc.":["502010","963000"],"CUINA SANTA CATERINA|Brandlight Inc.":["502010","963000"],"STARBUCKS COFFEE VIA LAIE|Brandlight Inc.":["502010","963000"],"TAXI LIC.6475|Brandlight Inc.":["502010","965001"],"626 - PC AER BCN T1 AIRE|Brandlight Inc.":["502010","963000"],"Immfly SL-Vta a Bordo|Brandlight Inc.":["502010","963000"],"SQ *DELECTICA|Brandlight Inc.":["502010","963000"],"SQ *CAFE #65095 UNION|Brandlight Inc.":["502010","963000"],"Whole Foods Market|Brandlight Inc.":["502010","963000"],"Lyft|Brandlight Inc.":["502010","965001"],"FRESH DIRECT|Brandlight Inc.":["502010","963000"],"PRET A MANGER US0037|Brandlight Inc.":["502010","963000"],"MTA|Brandlight Inc.":["502010","965001"],"Walgreens|Brandlight Inc.":["502010","964009"],"PARKER QUINN RESTAURANT|Brandlight Inc.":["502010","963000"],"UPWORK * -848944854|Brandlight Inc.":["502010","962006"],"Starbucks|Brandlight Inc.":["502010","963000"],"THE ATHENA PROJECT|Brandlight Inc.":["502010","911004"],"SPIKES STUDIO|Brandlight Inc.":["502010","400002"],"STARBUCKS STORE 70231|Brandlight Inc.":["502010","963000"],"Pershing|Brandlight Inc.":["502010","965001"],"VESTA  *VODAFONE TOPUP|Brandlight Inc.":["502010","964009"],"SQ *THINK NOMAD LLC|Brandlight Inc.":["502010","963000"],"Trader Joe's|Brandlight Inc.":["502010","963000"],"Leveraged Outbound Ltd|Brandlight Inc.":["502010","911004"],"PARK EAST CLEANERS|Brandlight Inc.":["502010","964009"],"SQ *KONA COFFEE ROASTE|Brandlight Inc.":["502010","963000"],"Soho House|Brandlight Inc.":["502010","911004"],"WOLFGANG STEAKHOUSE PA|Brandlight Inc.":["502010","963000"],"THE CLOCK COFFEE SHO|Brandlight Inc.":["502010","963000"],"CVS Pharmacy|Brandlight Inc.":["502010","964009"],"NYC Ferry|Brandlight Inc.":["502010","965001"],"OTTOMANELLI LIC|Brandlight Inc.":["502010","963000"],"TST* THE STANDARD GRILL|Brandlight Inc.":["502010","963000"],"TST* BIERGARTEN|Brandlight Inc.":["502010","963000"],"GREENWICH GOURMET MARK|Brandlight Inc.":["502010","963000"],"TST* GREGORY'S COFFEE GC0|Brandlight Inc.":["502010","963000"],"D'agostino|Brandlight Inc.":["502010","963000"],"SP FELT RIGHT LLC|Brandlight Inc.":["502010","911004"],"TENDER GREENS MDR|Brandlight Inc.":["502010","963000"],"CLAUDE.AI SUBSCRIPTION|Brandlight Inc.":["502010","901009"],"WWW.PODCASTLE.AI|Brandlight Inc.":["502010","911004"],"Uber Eats|Brandlight Inc.":["502010","963000"],"NYC TAXI 1246|Brandlight Inc.":["502010","965001"],"RIVERSIDEFM, INC.|Brandlight Inc.":["964009","502010"],"THE SMITH - LINCOLN|Brandlight Inc.":["502010","963000"],"Chipotle Mexican Grill|Brandlight Inc.":["502010","963000"],"TST* GREGORYS COFFEE - GC|Brandlight Inc.":["502010","963000"],"TST* JOE COFFEE - BRYANT|Brandlight Inc.":["502010","963000"],"Burlington Stores|Brandlight Inc.":["502010","964009"],"CINICO ON MADISON|Brandlight Inc.":["502010","963000"],"SQ *THE COFFEE HAUS|Brandlight Inc.":["502010","963000"],"BKG*Hotel at Booking.c|Brandlight Inc.":["502010","921008"],"TST* MAMAN - KING|Brandlight Inc.":["502010","963000"],"British Airways|Brandlight Inc.":["502010","921008"],"LOBSTER PLACE|Brandlight Inc.":["502010","963000"],"Curb Mobility|Brandlight Inc.":["502010","965001"],"VIRGIN NYC - AITANA|Brandlight Inc.":["502010","963000"],"Dropbox|Brandlight Inc.":["901009","502010"],"MAMAN|Brandlight Inc.":["502010","963000"],"Pret A Manger|Brandlight Inc.":["502010","963000"],"Amazon|Brandlight Inc.":["964009","502010"],"LA PECORA BIANCA 8|Brandlight Inc.":["502010","963000"],"Sainsbury's|Brandlight Inc.":["502010","963000"],"GOOGLE *ADS9696437247|Brandlight Inc.":["502010","901009"],"Sweetgreen|Brandlight Inc.":["502010","963000"],"NOA Cafe|Brandlight Inc.":["502010","963000"],"Modern Bread  Bagel|Brandlight Inc.":["502010","963000"],"MODERN B&B MIDTOWN N|Brandlight Inc.":["502010","963000"],"UPWORK * -855585411|Brandlight Inc.":["502010","962006"],"Apple|Brandlight Inc.":["502010","400002"],"GLAZE - UNION SQUARE|Brandlight Inc.":["502010","963000"],"MODERN BREAD & BAGEL|Brandlight Inc.":["502010","963000"],"THE PERFECT GIFT INC|Brandlight Inc.":["502010","964009"],"TST* JEAN'S NYC|Brandlight Inc.":["502010","963000"],"United|Brandlight Inc.":["502010","921008"],"MAMA MEZZE|Brandlight Inc.":["502010","963000"],"TST* FASANO RESTAURANT|Brandlight Inc.":["502010","963000"],"TST* SIP AND CO 1|Brandlight Inc.":["502010","963000"],"KLM Airlines|Brandlight Inc.":["502010","921008"],"SUPER PHARM VR|Brandlight AI LTD":["300001","964009"],"PROFOUND AI|Brandlight Inc.":["502010","911004"],"Playa Bowls|Brandlight Inc.":["502010","963000"],"Shipi smartphone|Brandlight AI LTD":["300001","400002"],"WWW.MAILERLITE.COM|Brandlight Inc.":["911004","502010"],"CONTENT ZEN|Brandlight AI LTD":["300001","901009"],"Apple|Brandlight AI LTD":["502010","400002"],"RUBIROSA - MULBERRY|Brandlight Inc.":["502010","963000"],"TELMA SHLOMO|Brandlight Inc.":["502010","921008"],"LYRIC HOTEL|Brandlight Inc.":["502010","921008"],"COMMON HOURS|Brandlight Inc.":["502010","963000"],"SQ *DON CAFE|Brandlight Inc.":["502010","963000"],"Shake Shack|Brandlight Inc.":["502010","963000"],"IDIGITAL STORE ITD|Brandlight AI LTD":["300001","400002"],"Adobe|Brandlight Inc.":["502010","901009"],"DD/BR #348531|Brandlight Inc.":["502010","963000"],"BLUEGROUND US, INC.|Brandlight Inc.":["502010","921008"],"DD-BR #358650|Brandlight Inc.":["963000","502010"],"GOOGLE*ADS9696437247|Brandlight Inc.":["901009","502010"],"Delta Airlines|Brandlight Inc.":["921008","502010"],"Notion|Brandlight Inc.":["901009","502010"],"BRIGHTDATA|Brandlight AI LTD":["901009","300001"],"OpenAI|Brandlight AI LTD":["901009","300001"],"TOWNEPLACE STS SLT LK CTY|Brandlight Inc.":["921008","502010"],"Serpapi|Brandlight AI LTD":["901009","300001"],"HUGO COFFEE ROASTERS SLC|Brandlight Inc.":["963000","502010"],"SLC Vessel Kitchen|Brandlight Inc.":["963000","502010"],"CAPCUT|Brandlight AI LTD":["901009","300001"],"HARMONS - BANGERTER 16|Brandlight Inc.":["964009","502010"],"ANTHROPIC  CLAUDE TEAM|Brandlight AI LTD":["901009","300001"],"protein Bar & Kitchen|Brandlight Inc.":["963000","502010"],"SLC iStore Exp/Relay|Brandlight Inc.":["400002","502010"],"The Coffee & Tea Exchange|Brandlight Inc.":["963000","502010"],"OHM - GOURMANDISE|Brandlight Inc.":["963000","502010"],"PayMe|Brandlight AI LTD":["962006","300001"],"CURB NYC TAXI|Brandlight Inc.":["965001","502010"],"ANTHROPIC|Brandlight AI LTD":["901009","300001"],"easy coffee|Brandlight Inc.":["963000","502010"],"PAYPAL *ALPHAQUANTU|Brandlight AI LTD":["964009","300001"],"Vcorp Services|Brandlight Inc.":["962006","502010"],"SUZANA|Brandlight Inc.":["963000","502010"],"SITE-SHOT.COM|Brandlight AI LTD":["901009","300001"],"Figma|Brandlight AI LTD":["901009","300001"],"PADDLE.NET* N8N CLOUD1|Brandlight AI LTD":["901009","300001"],"2M CARBURANTI|Brandlight Inc.":["965001","502010"],"SCIROCCO|Brandlight Inc.":["963000","502010"],"Delicia Imb Fiumicino T1|Brandlight Inc.":["963000","502010"],"ONLINE PAYMENT|Brandlight AI LTD":["962006","300001"],"BOLT.EUO2511121449|Brandlight Inc.":["965001","502010"],"Webflow|Brandlight AI LTD":["901009","300001"],"Barmhartig Koffie|Brandlight Inc.":["963000","502010"],"Webflow|Brandlight Inc.":["901009","502010"],"Jumbo O.handelskade|Brandlight Inc.":["963000","502010"],"The Hoxton|Brandlight Inc.":["921008","502010"],"Ahrefs|Brandlight Inc.":["901009","502010"],"BOLT.EUO2511132019|Brandlight Inc.":["965001","502010"],"LS Madre|Brandlight Inc.":["963000","502010"],"BOLT.EUO2511132142|Brandlight Inc.":["965001","502010"],"SCRUNCH AI|Brandlight Inc.":["901009","502010"],"BKG*HOTEL AT BOOKING.C|Brandlight Inc.":["921008","502010"],"NACHAT|Brandlight Inc.":["963000","502010"],"BOLT.EUO2511160920|Brandlight Inc.":["965001","502010"],"HMS Host International|Brandlight Inc.":["963000","502010"],"Avolta AAMS Loaf 2203 009|Brandlight Inc.":["963000","502010"],"Viasat|Brandlight Inc.":["901009","502010"],"GRAMMARLY CO*IJBTT8J|Brandlight Inc.":["901009","502010"],"HOTEL AURA TIMES SQUARE|Brandlight Inc.":["921008","502010"],"FS *dataforseo|Brandlight AI LTD":["901009","300001"],"CAFFE VITA - LOWER E|Brandlight Inc.":["963000","502010"],"TST* DUDLEYS|Brandlight Inc.":["963000","502010"],"PEEC AI|Brandlight AI LTD":["901009","300001"],"TRINITY PLACE RESTAURA|Brandlight Inc.":["963000","502010"],"Deliveroo|Brandlight Inc.":["963000","502010"],"TST* FRIEDMAN'S 31 STREET|Brandlight Inc.":["963000","502010"],"LA BOMBE|Brandlight Inc.":["963000","502010"],"Twilio|Brandlight AI LTD":["901009","300001"],"LEMSQZY* SCREENSTUDIO|Brandlight AI LTD":["901009","300001"],"Cursor|Brandlight AI LTD":["901009","300001"],"Linkedin|Brandlight AI LTD":["911004","300001"],"FORBES BUSINESS COUNCIL|Brandlight Inc.":["964009","502010"],"AIRBNB * HMC3JYCAHJ|Brandlight AI LTD":["921008","502010"],"CURSOR USAGE MID  NOV|Brandlight AI LTD":["901009","300001"],"DEEPL* SUB 198XSOV0PVF|Brandlight AI LTD":["964009","300001"],"Notion|Brandlight AI LTD":["901009","300001"],"BASE44|Brandlight AI LTD":["901009","300001"],"SUPER|Brandlight AI LTD":["963000","300001"],"Docusign|Brandlight AI LTD":["901009","300001"],"PAYPAL *EVENTHANDLE EVENT|Brandlight AI LTD":["911004","300001"],"HERCOLES LOCKS|Brandlight AI LTD":["400002","300001"],"Amtrak|Brandlight Inc.":["965001","502010"],"GALACI LTD|Brandlight AI LTD":["911004","300001"],"Ashby|Brandlight AI LTD":["901009","300001"],"NUTT LABS* NOTION VIP|Brandlight Inc.":["901009","502010"],"ISTORE|Brandlight AI LTD":["400002","300001"],"MEETALFRED.COM|Brandlight AI LTD":["901009","300001"],"Github|Brandlight AI LTD":["901009","300001"],"Zoho|Brandlight AI LTD":["901009","300001"],"ZOHO* ZOHO-BOOKS|Brandlight AI LTD":["901009","300001"],"BUY ME|Brandlight AI LTD":["963000","300001"],"CURSOR USAGE  NOV|Brandlight AI LTD":["901009","300001"],"MAX 10|Brandlight AI LTD":["963000","300001"],"ZIG - ZAG|Brandlight AI LTD":["965001","300001"],"SEARCHABLE.COM|Brandlight Inc.":["901009","502010"],"WWW.PERPLEXITY.AI|Brandlight AI LTD":["901009","300001"],"SCRUNCH|Brandlight Inc.":["901009","502010"],"EXPEDIA 72069208160332|Brandlight Inc.":["921008","502010"],"CURSOR USAGE MID  DEC|Brandlight AI LTD":["901009","300001"],"Tatte Bakery Cafe|Brandlight Inc.":["963000","502010"],"OLO*123 honeygrow Seap|Brandlight Inc.":["963000","502010"],"Flight Club|Brandlight Inc.":["921008","502010"],"TST* MARCELINO'S BOUTIQUE|Brandlight Inc.":["963000","502010"],"TST* LOLITA COCINA & TEQU|Brandlight Inc.":["963000","502010"],"RESHUT HADOAR MECHIR|Brandlight AI LTD":["965001","300001"],"SUPERYUDA|Brandlight AI LTD":["963000","300001"],"I LOVE CUPCAKES|Brandlight AI LTD":["963000","300001"],"Sentry|Brandlight AI LTD":["901009","300001"],"SOPER KLIL|Brandlight AI LTD":["967002","300001"],"PayEm Cash Back|Brandlight AI LTD":["969001","300001"]};
+const VALLEY_COA_DEFAULT = {"FISHER INVESTMEN INV- RMR*IK*INV-\\|Revenue":["100000","700000"],"NATIONAL EMPLOYE INVOICE H|Employee Salaries & Benefits":["540001","100000"],"Deel|Employee Salaries & Benefits":["500009","100000"],"The Yard 2 Lower SIGONFILE|Office Rent":["964000","100000"],"BRANDLIGHT LTD LEVERAGED|Marketing & Advertising":["911003","100000"],"NSKNOX TECHNOLOG PAYMENTS|Bank Fees & interest":["100000","990001"],"PRIME ONLINE LIMITED BRANDLIGHT INC. INV|Revenue":["100000","700000"],"PHILIP STEIN AND ASSOCIATES LTD PRO FORM|Professional Services":["962006","100000"],"NSKNOX TECHNOLOGIES|Bank Fees & interest":["990001","100000"],"PAYEM CSMRS PRGM FUNDING BRANDLIGHT AI|Credit/Debit banks/Accounts":["502010","100000"],"CENSUSWIDE LTD BRANDLIGHT REMAINING INV.|Marketing & Advertising":["911003","100000"],"BRANDLIGHT AI LTD|Credit/Debit banks/Accounts":["100000","300001"],"SAS CADOA BRANDLIGHT CAD2442|Technology":["901005","100000"],"DEAL# 1449182|Marketing & Advertising":["911003","100000"],"MMS AS PAYCO6366 EDI PAYMNT REF*TN** Var|Revenue":["100000","700000"],"IRS USER FEE PAYMENT|Authorities":["990002","100000"],"ANDREW BLOOM CONSULTING LLC BRANDLIGHT I|Vendors":["500001","100000"],"CONNEXUS LIMITED BRANDLIGHT INVOICE NO34|Marketing & Advertising":["911003","100000"],"ANALYSIS ACTIVITY FOR 10/25|Bank Fees & interest":["990001","100000"],"ATASH LAW P.C. BRANDLIGHT INV 2281|Professional Services":["962006","100000"],"HUBSPOT|Marketing & Advertising":["911003","100000"],"LOGMEIN 11.19.2025 RMR*IK*IN\\|Revenue":["100000","700000"],"LEO BURNETT LIMITED /BNF//CHPREF/|Revenue":["100000","700000"],"Teneo Strategy L USSC 11.21 00004599/|Revenue":["100000","700000"],"ARNON|Professional Services":["962006","100000"],"BRANDLIGHT LTD PUBLIC REL|Marketing & Advertising":["911003","100000"],"ISCAR LTD INVOICES|Revenue":["100000","700000"],"KIMBERLY CL6933 EDI PAYMNT|Revenue":["100000","700000"],"1/SAAR TECHNOLOGIES )Z.H( LTD /BNF/BOOK/|Revenue":["100000","700000"],"WISE US INC From Inmarkets Limited Via W|Revenue":["100000","700000"],"SOFWAVE MEDICAL LTD INVOICE NO. 034 DATE|Marketing & Advertising":["100000","700000"],"ANDREW BLOOM CONSULTING LLC BRANDLIGHT I|Marketing & Advertising":["911003","100000"],"SOFWAVE MEDICAL LTD INVOICE NO. 034 DATE|Revenue":["100000","700000"],"XVERUM LLC BRANDLIGHT|Professional Services":["962006","100000"],"DAVID SHIELD - PASSPORTCARD LTD INV- PAY|Revenue":["100000","700000"],"1/ZYG EDGE LTD INV- /BNF/BOOK/JS|Revenue":["100000","700000"],"ANALYSIS ACTIVITY FOR 11/25|Bank Fees & interest":["990001","100000"],"TENEO STRATEGY LIMITED /ROC/BRANDLIGHT I|Revenue":["100000","700000"],"DATA AXLE PJP ACH 12|Revenue":["100000","700000"],"PELION VENTURES VIII-A|Investment":["100000","600015"],"PELION VENTURES VIII-C|Investment":["100000","600015"],"PELION VENTURES VIII - ENTREPRENEU+ PELI|Investment":["100000","600016"],"PELION VENTURES VIII FINANCIAL PELION VE|Investment":["100000","600017"],"PELION VENTURES VIII|Investment":["100000","600015"],"XVERUM LLC BRANDLIGHT|Recruitment":["962003","100000"],"HARTFORD FIRE IN TRADE EXC|Revenue":["100000","700000"],"G20 VENTURES IV LP BRANDLIGHT INC SAFE|Investment":["100000","600006"],"Deposit|Revenue":["100000","700000"],"LLORENTE CUENCA MADRID SL /ROC/AFJQ18/UR|Revenue":["100000","700000"],"CARDUMEN DEEPTECH II ILS SCR-PYME ABA/RO|Investment":["100000","600018"],"CARDUMEN DEEPTECH II A SCR-PYME S PLEASE|Investment":["100000","600019"],"CARDUMEN DEEPTECH FUND II FCRE PLEASE PA|Investment":["100000","600020"],"MAYER BROWN LLP 25802709 INVESTMENT INBR|Professional Services":["962006","100000"],"GOOGLE ACCTVERIFY US004A0Q|Bank Fees & interest":["990001","100000"]};
+const VALLEY_CAT_COA = {"Revenue":["100000","700000"],"Employee Salaries & Benefits":["540001","100000"],"Office Rent":["964000","100000"],"Marketing & Advertising":["911003","100000"],"Bank Fees & interest":["990001","100000"],"Professional Services":["962006","100000"],"Credit/Debit banks/Accounts":["502010","100000"],"Technology":["901005","100000"],"Authorities":["990002","100000"],"Vendors":["500001","100000"],"Investment":["100000","600015"],"Recruitment":["962003","100000"]};
+const LTD_COA_DEFAULT = {"TELMA SHLOMO":["104000","921008"],"UPS":["104000","965001"],"AIRBNB * HM8RCRNBBT":["104000","921008"],"SUPER PHARM VR":["104000","964009"],"Shipi smartphone":["104000","400002"],"CONTENT ZEN":["104000","901009"],"Apple":["104000","400002"],"IDIGITAL STORE ITD":["104000","400002"],"BRIGHTDATA":["104000","901009"],"OpenAI":["104000","901009"],"Serpapi":["104000","901009"],"CAPCUT":["104000","901009"],"ANTHROPIC  CLAUDE TEAM":["104000","901009"],"PayMe":["104000","962006"],"ANTHROPIC":["104000","901009"],"PAYPAL *ALPHAQUANTU":["104000","964009"],"SITE-SHOT.COM":["104000","901009"],"Figma":["104000","901009"],"PADDLE.NET* N8N CLOUD1":["104000","901009"],"ONLINE PAYMENT":["104000","962006"],"Webflow":["104000","901009"],"FS *dataforseo":["104000","901009"],"PEEC AI":["104000","901009"],"Twilio":["104000","901009"],"LEMSQZY* SCREENSTUDIO":["104000","901009"],"Cursor":["104000","901009"],"Linkedin":["104000","911004"],"AIRBNB * HMC3JYCAHJ":["104000","921008"],"CURSOR USAGE MID  NOV":["104000","901009"],"DEEPL* SUB 198XSOV0PVF":["104000","964009"],"Notion":["104000","901009"],"BASE44":["104000","901009"],"SUPER":["104000","963000"],"Docusign":["104000","901009"],"PAYPAL *EVENTHANDLE EVENT":["104000","911004"],"HERCOLES LOCKS":["104000","400002"],"GALACI LTD":["104000","911004"],"Ashby":["104000","901009"],"ISTORE":["104000","400002"],"MEETALFRED.COM":["104000","901009"],"Github":["104000","901009"],"Zoho":["104000","901009"],"ZOHO* ZOHO-BOOKS":["104000","901009"],"BUY ME":["104000","963000"],"CURSOR USAGE  NOV":["104000","901009"],"MAX 10":["104000","963000"],"ZIG - ZAG":["104000","965001"],"WWW.PERPLEXITY.AI":["104000","901009"],"CURSOR USAGE MID  DEC":["104000","901009"],"RESHUT HADOAR MECHIR":["104000","965001"],"SUPERYUDA":["104000","963000"],"I LOVE CUPCAKES":["104000","963000"],"Sentry":["104000","901009"],"SOPER KLIL":["104000","967002"]};
+
+// ===== STORAGE MANAGER =====
+class StorageManager {
+    constructor() {
+        this.HISTORY_KEY = 'vb_converter_history';
+        this.COA_KEY = 'vb_converter_coa';
+    }
+    loadHistory() { try { return JSON.parse(localStorage.getItem(this.HISTORY_KEY)) || {valley:{keys:{},count:0},payem:{keys:{},count:0}}; } catch(e) { return {valley:{keys:{},count:0},payem:{keys:{},count:0}}; } }
+    saveHistory(data) { localStorage.setItem(this.HISTORY_KEY, JSON.stringify(data)); }
+    getHistoryKeys(type) { return this.loadHistory()[type]?.keys || {}; }
+    addKeys(type, keys, fileName) {
+        const h = this.loadHistory();
+        if(!h[type]) h[type] = {keys:{},count:0};
+        const ts = new Date().toISOString();
+        keys.forEach(k => { h[type].keys[k] = {ts, file: fileName}; });
+        h[type].count = Object.keys(h[type].keys).length;
+        h[type].lastProcessed = ts;
+        h[type].lastFile = fileName;
+        this.saveHistory(h);
+    }
+    getStats() {
+        const h = this.loadHistory();
+        return {
+            valley: { count: Object.keys(h.valley?.keys||{}).length, last: h.valley?.lastProcessed, file: h.valley?.lastFile },
+            payem: { count: Object.keys(h.payem?.keys||{}).length, last: h.payem?.lastProcessed, file: h.payem?.lastFile }
+        };
+    }
+    exportJSON() { return JSON.stringify(this.loadHistory(), null, 2); }
+    importJSON(json) {
+        const imported = JSON.parse(json);
+        const current = this.loadHistory();
+        ['valley','payem'].forEach(type => {
+            if(imported[type]?.keys) {
+                if(!current[type]) current[type] = {keys:{},count:0};
+                Object.assign(current[type].keys, imported[type].keys);
+                current[type].count = Object.keys(current[type].keys).length;
+            }
+        });
+        this.saveHistory(current);
+    }
+    clearHistory() { localStorage.removeItem(this.HISTORY_KEY); }
+    loadCoa() { try { return JSON.parse(localStorage.getItem(this.COA_KEY)); } catch(e) { return null; } }
+    saveCoa(data) { localStorage.setItem(this.COA_KEY, JSON.stringify(data)); }
+    getPayemCoa() { const c = this.loadCoa(); return c?.payem || PAYEM_COA_DEFAULT; }
+    getValleyCoa() { const c = this.loadCoa(); return c?.valley || VALLEY_COA_DEFAULT; }
+    getLtdCoa() { const c = this.loadCoa(); return c?.ltd || LTD_COA_DEFAULT; }
+}
+
+// ===== FILE DETECTOR =====
+class FileDetector {
+    static detect(rows) {
+        if(!rows || rows.length < 2) return {type:'unknown'};
+        const row0 = rows[0].map(c => String(c||''));
+        const row1 = rows[1].map(c => String(c||''));
+        if(row0.some(c => c.includes('Valley'))) return {type:'valley',confidence:'high'};
+        if(row0.some(c => c.includes('PayEm'))) return {type:'payem',confidence:'high'};
+        if(row1[0] && row1[0].startsWith('Bank')) return {type:'valley',confidence:'medium'};
+        if(row1[0]==='Date' && row1[1]==='Time' && row1[2]==='Status') return {type:'payem',confidence:'medium'};
+        return {type:'unknown'};
+    }
+}
+
+// ===== VALLEY PARSER =====
+class ValleyParser {
+    constructor(coaLookup, catLookup) { this.coa = coaLookup; this.catCoa = catLookup; }
+    cleanDescription(txnType, desc) {
+        let c = desc || '';
+        // Remove leading wire/ach timestamp sequences (e.g., 202601050000914)
+        c = c.replace(/^20\d{11,}\s*/g,'');
+        // Remove long numeric sequences (10+ digits)
+        c = c.replace(/\d{10,}/g,'');
+        // Remove 6-digit date-like sequences
+        c = c.replace(/\b\d{6}\b/g,'');
+        // Remove ST-prefixed tracking codes
+        c = c.replace(/ST-?[A-Z0-9]{10,}/g,'');
+        // Remove date patterns like 26/01/14
+        c = c.replace(/\d{2}\/\d{2}\/\d{2}/g,'');
+        // Collapse multiple spaces to one
+        c = c.replace(/\s+/g,' ').trim();
+        // Truncate to 40 chars
+        if(c.length>40) c=c.substring(0,40).trim();
+        if(!c||c.length<3) return txnType;
+        return c;
+    }
+    parseAmount(s) { let c=String(s||'').replace(/[\$,\s]/g,''); const neg=c.includes('('); c=c.replace(/[()]/g,''); return Math.abs(parseFloat(c))||0; }
+    parseDate(s) {
+        const p = String(s||'').split('/');
+        if(p.length!==3) return null;
+        const m=parseInt(p[0]),d=parseInt(p[1]),y=parseInt(p[2]);
+        if(isNaN(m)||isNaN(d)||isNaN(y)) return null;
+        return new Date(y,m-1,d);
+    }
+    formatDate(dt) { return String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear(); }
+    generateKey(dateStr, amount, ref, baiDesc, detail) {
+        const r = String(ref||'').trim();
+        if(r && r!=='0') return dateStr+'|'+amount+'|'+r;
+        return dateStr+'|'+amount+'|'+baiDesc+'|'+(detail||'').substring(0,20);
+    }
+    parse(rows) {
+        const results = [];
+        for(let i=2; i<rows.length; i++) {
+            const row = rows[i];
+            if(!row || row.length<12) continue;
+            const bankAba = String(row[0]||'');
+            if(bankAba.startsWith('Bank')) continue;
+            const dateStr = String(row[5]||'');
+            const typeInd = String(row[6]||'').toUpperCase();
+            const amountStr = String(row[7]||'');
+            const custRef = String(row[8]||'');
+            const baiDesc = String(row[10]||'').toUpperCase();
+            const detail = String(row[11]||'');
+            const category = row.length > 20 ? String(row[20]||'') : '';
+            const isValid = baiDesc.includes('ACH') || baiDesc.includes('WIRE') || baiDesc.includes('DEPOSIT') || baiDesc.includes('FEE') || typeInd==='DEBIT' || typeInd==='CREDIT';
+            if(!isValid || !dateStr.includes('/') || !amountStr) continue;
+            const dt = this.parseDate(dateStr);
+            if(!dt) continue;
+            const amount = this.parseAmount(amountStr);
+            if(!amount && amount!==0) continue;
+            const desc = this.cleanDescription(baiDesc, detail);
+            const key = this.generateKey(dateStr, amount, custRef, baiDesc, detail);
+            const coaKey = desc + '|' + category;
+            const coaMatch = this.coa[coaKey];
+            const catMatch = this.catCoa[category];
+            const coaDebit = coaMatch ? coaMatch[0] : (catMatch ? catMatch[0] : '');
+            const coaCredit = coaMatch ? coaMatch[1] : (catMatch ? catMatch[1] : '');
+            results.push({ key, date: dt, dateFormatted: this.formatDate(dt), description: desc, amount, category, coaDebit, coaCredit, rawDate: dateStr });
+        }
+        results.sort((a,b) => a.date - b.date);
+        return results;
+    }
+}
+
+// ===== PAYEM PARSER =====
+class PayEmParser {
+    constructor(coaLookup, ltdCoa) { this.coa = coaLookup; this.ltdCoa = ltdCoa; }
+    parseNetAmount(s) {
+        let c = String(s||'').replace(/[\$,\s]/g,'');
+        const neg = c.includes('(');
+        c = c.replace(/[()]/g,'');
+        let v = parseFloat(c) || 0;
+        if(neg) v = -v;
+        return v;
+    }
+    parseAmount5(s) {
+        let c = String(s||'').replace(/[\$,\s]/g,'');
+        c = c.replace(/[()]/g,'');
+        return Math.abs(parseFloat(c)) || 0;
+    }
+    parseDate(s) {
+        const p = String(s||'').split('-');
+        if(p.length===3) { const y=parseInt(p[0]),m=parseInt(p[1]),d=parseInt(p[2]); if(!isNaN(y)&&!isNaN(m)&&!isNaN(d)) return new Date(y,m-1,d); }
+        return null;
+    }
+    formatDate(dt) { return String(dt.getDate()).padStart(2,'0')+'/'+String(dt.getMonth()+1).padStart(2,'0')+'/'+dt.getFullYear(); }
+    parse(rows) {
+        const results = [];
+        for(let i=2; i<rows.length; i++) {
+            const row = rows[i];
+            if(!row || row.length<42) continue;
+            const status = String(row[2]||'').toUpperCase();
+            if(status !== 'CLEARED') continue;
+            const dateStr = String(row[0]||'');
+            const dt = this.parseDate(dateStr);
+            if(!dt) continue;
+            const merchant = String(row[28]||'').trim();
+            const txnId = String(row[41]||'').trim();
+            const card4 = String(row[35]||'').trim();
+            const subsidiary = String(row[9]||'').trim();
+            const netAmountStr = row.length > 53 ? String(row[53]||'') : String(row[5]||'');
+            const netAmount = this.parseNetAmount(netAmountStr);
+            const absAmount = Math.abs(netAmount);
+            const isCredit = netAmount > 0;
+            const creditAmount = isCredit ? absAmount : null;
+            const debitAmount = isCredit ? null : absAmount;
+            const coaKey = merchant + '|' + subsidiary;
+            const coaMatch = this.coa[coaKey];
+            const coaCredit = coaMatch ? coaMatch[0] : '';
+            const coaDebit = coaMatch ? coaMatch[1] : '';
+            const ltdMatch = this.ltdCoa[merchant];
+            const ltdCoaCredit = ltdMatch ? ltdMatch[0] : '';
+            const ltdCoaDebit = ltdMatch ? ltdMatch[1] : '';
+            const absAmount2 = Math.abs(netAmount);
+            results.push({
+                key: txnId, date: dt, dateFormatted: this.formatDate(dt),
+                description: merchant, netAmount, absAmount: absAmount2, creditAmount, debitAmount,
+                ref1: parseInt(txnId) || txnId, ref2: card4,
+                coaCredit, coaDebit, ltdCoaCredit, ltdCoaDebit,
+                subsidiary, rawDate: dateStr
+            });
+        }
+        results.sort((a,b) => a.date - b.date);
+        return results;
+    }
+}
+
+// ===== DUPLICATE DETECTOR =====
+class DuplicateDetector {
+    constructor(storage) { this.storage = storage; }
+    analyze(type, transactions) {
+        const history = this.storage.getHistoryKeys(type);
+        const newTxns = [], dupes = [];
+        transactions.forEach(t => { if(history[t.key]) dupes.push(t); else newTxns.push(t); });
+        return { newTransactions: newTxns, duplicates: dupes, stats: {total: transactions.length, new: newTxns.length, dup: dupes.length} };
+    }
+}
+
+// ===== MAIN APP =====
+class App {
+    constructor() {
+        this.storage = new StorageManager();
+        this.dedup = new DuplicateDetector(this.storage);
+        this.rawData = [];
+        this.detectedType = null;
+        this.allParsed = [];
+        this.newOnly = [];
+        this.dedupResult = null;
+        this.fileName = '';
+        this.init();
+    }
+    init() {
+        const up = document.getElementById('uploadSection');
+        up.addEventListener('dragover', e => { e.preventDefault(); up.style.borderColor='#4caf50'; });
+        up.addEventListener('dragleave', e => { e.preventDefault(); up.style.borderColor='#9e9e9e'; });
+        up.addEventListener('drop', e => { e.preventDefault(); up.style.borderColor='#9e9e9e'; if(e.dataTransfer.files.length) this.handleFile(e.dataTransfer.files[0]); });
+        document.getElementById('fileInput').addEventListener('change', e => { if(e.target.files.length) this.handleFile(e.target.files[0]); });
+        this.updateHistoryPanel();
+    }
+    showMsg(msg, type) {
+        const el = document.getElementById('statusMessage');
+        el.textContent = msg; el.className = 'status-message ' + type; el.style.display = 'block';
+        if(type!=='info') setTimeout(()=>el.style.display='none', 6000);
+    }
+    setStep(n) {
+        document.querySelectorAll('.step').forEach((s,i) => {
+            s.classList.remove('active','completed');
+            if(i < n-1) s.classList.add('completed');
+            else if(i === n-1) s.classList.add('active');
+        });
+    }
+    handleFile(file) {
+        if(!file.name.endsWith('.csv')) { this.showMsg('אנא העלה קובץ CSV בלבד','error'); return; }
+        this.fileName = file.name;
+        this.setStep(1);
+        document.getElementById('fileInfo').innerHTML = '<div class="file-info"><strong>קובץ:</strong> '+file.name+' | <strong>גודל:</strong> '+(file.size/1024).toFixed(1)+' KB</div>';
+        document.getElementById('uploadSection').classList.add('active');
+        const reader = new FileReader();
+        reader.onload = e => {
+            Papa.parse(e.target.result, {
+                header: false, skipEmptyLines: true,
+                complete: res => {
+                    this.rawData = res.data;
+                    const detection = FileDetector.detect(this.rawData);
+                    this.detectedType = detection.type;
+                    const badge = document.getElementById('fileTypeBadge');
+                    if(this.detectedType === 'valley') {
+                        badge.innerHTML = '<span class="file-type-badge badge-valley">Valley Bank</span>';
+                        badge.style.display = 'block';
+                    } else if(this.detectedType === 'payem') {
+                        badge.innerHTML = '<span class="file-type-badge badge-payem">PayEm Card</span>';
+                        badge.style.display = 'block';
+                    } else {
+                        badge.innerHTML = '<span class="file-type-badge" style="background:#ffcdd2;color:#b71c1c;border:2px solid #f44336;">לא מזוהה</span>';
+                        badge.style.display = 'block';
+                        this.showMsg('לא ניתן לזהות את סוג הקובץ','error');
+                        return;
+                    }
+                    // Parse
+                    let parser;
+                    if(this.detectedType === 'valley') {
+                        parser = new ValleyParser(this.storage.getValleyCoa(), VALLEY_CAT_COA);
+                    } else {
+                        parser = new PayEmParser(this.storage.getPayemCoa(), this.storage.getLtdCoa());
+                    }
+                    this.allParsed = parser.parse(this.rawData);
+                    // Dedup
+                    this.dedupResult = this.dedup.analyze(this.detectedType, this.allParsed);
+                    this.newOnly = this.dedupResult.newTransactions;
+                    // Show dedup info
+                    const di = document.getElementById('dedupInfo');
+                    document.getElementById('totalParsed').textContent = this.dedupResult.stats.total;
+                    document.getElementById('newCountLabel').textContent = this.dedupResult.stats.new + ' חדשות';
+                    document.getElementById('dupCountLabel').textContent = this.dedupResult.stats.dup + ' כבר עובדו';
+                    di.style.display = 'block';
+                    document.getElementById('processOptions').style.display = 'block';
+                    document.getElementById('processBtn').classList.remove('hidden');
+                    this.showMsg('הקובץ נטען! נמצאו '+this.allParsed.length+' תנועות ('+this.newOnly.length+' חדשות)','success');
+                },
+                error: err => this.showMsg('שגיאה: '+err.message,'error')
+            });
+        };
+        reader.readAsText(file, 'UTF-8');
+    }
+    processData() {
+        this.setStep(2);
+        const pb = document.getElementById('progressBar');
+        const pf = document.getElementById('progressFill');
+        pb.style.display = 'block'; pf.style.width = '30%';
+        const newOnlyChecked = document.getElementById('newOnlyCheck').checked;
+        const data = newOnlyChecked ? this.newOnly : this.allParsed;
+        setTimeout(() => {
+            pf.style.width = '70%';
+            this.displayStats(data);
+            this.displayPreview(data);
+            pf.style.width = '100%';
+            setTimeout(() => {
+                pb.style.display = 'none';
+                document.getElementById('downloadBtn').classList.remove('hidden');
+                this.setStep(3);
+                this.showMsg('העיבוד הושלם! '+data.length+' תנועות מוכנות להורדה','success');
+            }, 300);
+        }, 200);
+    }
+    displayStats(data) {
+        const ss = document.getElementById('statsSection');
+        ss.classList.remove('hidden');
+        let html = '';
+        if(this.detectedType === 'valley') {
+            let totalAmount = 0;
+            data.forEach(t => totalAmount += t.amount);
+            const minDate = data.length ? data[0].dateFormatted : '-';
+            const maxDate = data.length ? data[data.length-1].dateFormatted : '-';
+            html = `<div class="stat-card green"><div class="stat-value">${data.length}</div><div class="stat-label">תנועות</div></div>`;
+            html += `<div class="stat-card blue"><div class="stat-value">${minDate} - ${maxDate}</div><div class="stat-label">תקופה</div></div>`;
+            html += `<div class="stat-card orange"><div class="stat-value">$${totalAmount.toLocaleString('en',{minimumFractionDigits:2})}</div><div class="stat-label">סך תנועות</div></div>`;
+        } else {
+            let totalDebit = 0, totalCredit = 0;
+            data.forEach(t => { if(t.debitAmount) totalDebit += t.debitAmount; if(t.creditAmount) totalCredit += t.creditAmount; });
+            html = `<div class="stat-card green"><div class="stat-value">${data.length}</div><div class="stat-label">תנועות</div></div>`;
+            html += `<div class="stat-card orange"><div class="stat-value">$${totalDebit.toLocaleString('en',{minimumFractionDigits:2})}</div><div class="stat-label">סך חובה</div></div>`;
+            html += `<div class="stat-card blue"><div class="stat-value">$${totalCredit.toLocaleString('en',{minimumFractionDigits:2})}</div><div class="stat-label">סך זכות</div></div>`;
+        }
+        const noCoa = data.filter(t => this.detectedType==='valley' ? !t.coaDebit : !t.coaCredit).length;
+        if(noCoa > 0) html += `<div class="stat-card gray"><div class="stat-value">${noCoa}</div><div class="stat-label">ללא ח"ן</div></div>`;
+        ss.innerHTML = html;
+    }
+    displayPreview(data) {
+        const ps = document.getElementById('previewSection');
+        ps.style.display = 'block';
+        const count = Math.min(30, data.length);
+        document.getElementById('previewInfo').textContent = 'מציג '+count+' מתוך '+data.length;
+        const thead = document.getElementById('previewHead');
+        const tbody = document.getElementById('previewBody');
+        if(this.detectedType === 'valley') {
+            thead.innerHTML = '<tr><th>תאריך</th><th>תיאור</th><th>חובה</th><th>זכות</th><th>קטגוריה</th><th>ח"ן חובה</th><th>ח"ן זכות</th></tr>';
+            tbody.innerHTML = '';
+            for(let i=0;i<count;i++) {
+                const t = data[i];
+                const noCoa = !t.coaDebit ? ' class="no-coa"' : '';
+                tbody.innerHTML += `<tr${noCoa}><td>${t.dateFormatted}</td><td>${t.description}</td><td>${t.amount.toFixed(2)}</td><td>${t.amount.toFixed(2)}</td><td>${t.category}</td><td>${t.coaDebit}</td><td>${t.coaCredit}</td></tr>`;
+            }
+        } else {
+            thead.innerHTML = '<tr><th>תיאור</th><th>סכום</th><th>זכות</th><th>חובה</th><th>אסמכתא 1</th><th>אסמכתא 2</th><th>ח"ן זכות</th><th>ח"ן חובה</th><th>תאריך</th><th>שיוך</th></tr>';
+            tbody.innerHTML = '';
+            for(let i=0;i<count;i++) {
+                const t = data[i];
+                const noCoa = !t.coaCredit ? ' class="no-coa"' : '';
+                tbody.innerHTML += `<tr${noCoa}><td>${t.description}</td><td>${t.netAmount.toFixed(2)}</td><td>${t.creditAmount!=null?t.creditAmount.toFixed(2):''}</td><td>${t.debitAmount!=null?t.debitAmount.toFixed(2):''}</td><td>${t.ref1}</td><td>${t.ref2}</td><td>${t.coaCredit}</td><td>${t.coaDebit}</td><td>${t.dateFormatted}</td><td>${t.subsidiary}</td></tr>`;
+            }
+        }
+    }
+    downloadExcel() {
+        const newOnlyChecked = document.getElementById('newOnlyCheck').checked;
+        const data = newOnlyChecked ? this.newOnly : this.allParsed;
+        if(!data.length) { this.showMsg('אין תנועות להורדה','warning'); return; }
+        const wb = XLSX.utils.book_new();
+        if(this.detectedType === 'valley') {
+            this.buildValleySheet(wb, data);
+        } else {
+            this.buildPayEmSheets(wb, data);
+        }
+        const today = new Date();
+        const prefix = this.detectedType === 'valley' ? 'Valley_Bank' : 'PayEm';
+        const fn = prefix + '_' + today.getDate() + '_' + (today.getMonth()+1) + '_' + today.getFullYear() + '.xlsx';
+        XLSX.writeFile(wb, fn);
+        // Save processed keys to history
+        const keys = data.map(t => t.key);
+        this.storage.addKeys(this.detectedType, keys, this.fileName);
+        this.updateHistoryPanel();
+        this.showMsg('הקובץ הורד בהצלחה! '+data.length+' תנועות נשמרו בהיסטוריה','success');
+    }
+    buildValleySheet(wb, data) {
+        const rows = [['תאריך','תיאור','חובה','זכות','קטגוריה','ח"ן חובה','ח"ן זכות']];
+        data.forEach(t => rows.push([t.dateFormatted, t.description, t.amount, t.amount, t.category, t.coaDebit, t.coaCredit]));
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{wch:12},{wch:42},{wch:14},{wch:14},{wch:28},{wch:12},{wch:12}];
+        for(let i=2;i<=rows.length;i++) {
+            ['C','D'].forEach(col => { if(ws[col+i]) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
+        }
+        XLSX.utils.book_append_sheet(wb, ws, 'VALLEYTRANS');
+    }
+    buildPayEmSheets(wb, data) {
+        // Sheet 1: PAYEMDATA (all)
+        this.addPayEmSheet(wb, data, 'PAYEMDATA', 'all');
+        // Sheet 2: פקודה INC
+        const incData = data.filter(t => t.subsidiary.includes('Inc'));
+        this.addPayEmSheet(wb, incData, 'פקודה INC', 'inc');
+        // Sheet 3: רישום LTD
+        const ltdData = data.filter(t => t.subsidiary.includes('LTD'));
+        this.addPayEmSheet(wb, ltdData, 'רישום LTD', 'ltd');
+        // Sheet 4: נגדית לINC של LTD
+        this.addPayEmSheet(wb, ltdData, 'נגדית לINC של LTD', 'negdit');
+    }
+    addPayEmSheet(wb, data, sheetName, mode) {
+        const rows = [['תיאור','Transaction amount','זכות מטח','חובה מטח','אסמכתא 1','אסמכתא 2','ח"ן זכות','ח"ן חובה','תאריך','שיוך']];
+        data.forEach(t => {
+            let coaCr, coaDr;
+            if(mode === 'ltd') {
+                coaCr = t.ltdCoaCredit || '';
+                coaDr = t.ltdCoaDebit || '';
+            } else if(mode === 'negdit') {
+                coaCr = '502010';
+                coaDr = '300001';
+            } else {
+                coaCr = t.coaCredit;
+                coaDr = t.coaDebit;
+            }
+            let creditVal, debitVal;
+            if(mode === 'ltd' || mode === 'negdit') {
+                // LTD and negdit sheets: both columns show absolute amount
+                creditVal = t.absAmount;
+                debitVal = t.absAmount;
+            } else {
+                creditVal = t.creditAmount != null ? t.creditAmount : null;
+                debitVal = t.debitAmount != null ? t.debitAmount : null;
+            }
+            rows.push([
+                t.description,
+                t.netAmount,
+                creditVal,
+                debitVal,
+                t.ref1,
+                t.ref2,
+                coaCr,
+                coaDr,
+                t.date,
+                t.subsidiary
+            ]);
+        });
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{wch:30},{wch:16},{wch:14},{wch:14},{wch:14},{wch:10},{wch:12},{wch:12},{wch:12},{wch:22}];
+        for(let i=2;i<=rows.length;i++) {
+            ['B','C','D'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
+            // ref1 (E) = number, ref2 (F) = string
+            if(ws['E'+i] && ws['E'+i].v != null) { ws['E'+i].t='n'; }
+            if(ws['F'+i] && ws['F'+i].v != null) { ws['F'+i].t='s'; ws['F'+i].v = String(ws['F'+i].v); }
+            if(ws['I'+i] && ws['I'+i].v instanceof Date) { ws['I'+i].t='d'; ws['I'+i].z='dd/mm/yyyy'; }
+        }
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    }
+    updateHistoryPanel() {
+        const stats = this.storage.getStats();
+        const el = document.getElementById('historyStats');
+        let html = '';
+        html += `<div class="history-stat"><strong>Valley Bank:</strong> ${stats.valley.count} תנועות`;
+        if(stats.valley.last) html += ` | עדכון: ${new Date(stats.valley.last).toLocaleDateString('he-IL')}`;
+        html += '</div>';
+        html += `<div class="history-stat"><strong>PayEm:</strong> ${stats.payem.count} תנועות`;
+        if(stats.payem.last) html += ` | עדכון: ${new Date(stats.payem.last).toLocaleDateString('he-IL')}`;
+        html += '</div>';
+        el.innerHTML = html;
+    }
+    exportHistory() {
+        const json = this.storage.exportJSON();
+        const blob = new Blob([json], {type:'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'converter_history_'+new Date().toISOString().split('T')[0]+'.json';
+        a.click();
+    }
+    importHistory(event) {
+        const file = event.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                this.storage.importJSON(e.target.result);
+                this.updateHistoryPanel();
+                this.showMsg('ההיסטוריה יובאה בהצלחה!','success');
+            } catch(err) { this.showMsg('שגיאה בייבוא: '+err.message,'error'); }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+    clearHistory() {
+        if(confirm('למחוק את כל ההיסטוריה? פעולה זו לא ניתנת לביטול.')) {
+            this.storage.clearHistory();
+            this.updateHistoryPanel();
+            this.showMsg('ההיסטוריה נמחקה','info');
+        }
+    }
+    exportCoaLookup() {
+        const data = { payem: this.storage.getPayemCoa(), valley: this.storage.getValleyCoa(), ltd: this.storage.getLtdCoa(), valley_category: VALLEY_CAT_COA };
+        const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'coa_lookup_'+new Date().toISOString().split('T')[0]+'.json';
+        a.click();
+    }
+    importCoaLookup(event) {
+        const file = event.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = e => {
+            try {
+                const data = JSON.parse(e.target.result);
+                this.storage.saveCoa(data);
+                this.showMsg('טבלת ח"ן עודכנה בהצלחה!','success');
+            } catch(err) { this.showMsg('שגיאה: '+err.message,'error'); }
+        };
+        reader.readAsText(file);
+        event.target.value = '';
+    }
+}
+
+const app = new App();
+</script>
+</body>
+</html>
