@@ -1,0 +1,7 @@
+# Temp files
+~$*
+nul
+_temp_*
+
+# Claude project files
+.claude/
