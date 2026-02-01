@@ -1,0 +1,128 @@
+טבלה למילוי Chart of Accounts - Number
+==========================================
+
+הנחיות:
+- השלימי את מספר כרטיס החשבון בשורה "Chart of Accounts: _____"
+- תנועות באותה קטגוריה יכולות לקבל אותו מספר כרטיס
+
+==========================================
+קטגוריה: Investment (השקעות)
+==========================================
+
+1. DAVID EDELMAN (02/11/2025)
+   סכום: $25,000.00
+   Expenses Category: Investment
+   Chart of Accounts: 600005
+
+2. PELION VENTURES VIII-A, L.P. (26/12/2025)
+   סכום: $73,500.47
+   Expenses Category: Investment
+   Chart of Accounts: 600015
+
+3. PELION VENTURES VIII-C, L.P. (26/12/2025)
+   סכום: $394,500.38
+   Expenses Category: Investment
+   Chart of Accounts: 600015
+
+4. PELION VENTURES VIII - ENTREPREN (26/12/2025)
+   סכום: $728,999.32
+   Expenses Category: Investment
+   Chart of Accounts: 600016
+
+5. PELION VENTURES VIII FINANCIAL (26/12/2025)
+   סכום: $6,336,001.38
+   Expenses Category: Investment
+   Chart of Accounts: 600017
+
+6. PELION VENTURES VIII, L.P. (26/12/2025)
+   סכום: $7,466,994.78
+   Expenses Category: Investment
+   Chart of Accounts: 600015
+
+7. G20 VENTURES IV LP (30/12/2025)
+   סכום: $3,000,000.00
+   Expenses Category: Investment
+   Chart of Accounts: 600006
+
+8. CARDUMEN DEEPTECH II ILS SCR-PYM (31/12/2025)
+   סכום: $160,461.13
+   Expenses Category: Investment
+   Chart of Accounts: 600018
+
+9. CARDUMEN DEEPTECH II A SCR-PYME (31/12/2025)
+   סכום: $291,749.86
+   Expenses Category: Investment
+   Chart of Accounts: 600019
+
+10. CARDUMEN DEEPTECH FUND II FCRE (31/12/2025)
+    סכום: $1,547,793.70
+    Expenses Category: Investment
+    Chart of Accounts: 600020
+
+==========================================
+קטגוריה: Credit/Debit banks/Accounts
+==========================================
+
+11. BRANDLIGHT AI LTD (11/12/2025)
+    סכום: $99,970.00
+    Expenses Category: Credit/Debit banks/Accounts
+    Chart of Accounts: 300001
+
+12. BRANDLIGHT AI LTD (15/12/2025)
+    סכום: $179,970.00
+    Expenses Category: Credit/Debit banks/Accounts
+    Chart of Accounts: 300001
+
+13. PAYEM CSMRS PRGM FUNDING (29/12/2025)
+    סכום: ($300,000.00)
+    Expenses Category: Credit/Debit banks/Accounts
+    Chart of Accounts: 502010
+
+==========================================
+קטגוריה: Revenue (הכנסות)
+==========================================
+
+14. SOFWAVE MEDICAL LTD (06/11/2025)
+    סכום: $12,500.00
+    Expenses Category: Revenue
+    Chart of Accounts: 700000
+
+==========================================
+קטגוריה: Vendors (ספקים)
+==========================================
+
+15. ALISON NATHAN (06/11/2025)
+    סכום: ($14,696.15)
+    Expenses Category: Vendors
+    Chart of Accounts: 500001
+
+==========================================
+קטגוריה: Marketing & Advertising
+==========================================
+
+16. HUBSPOT, INC (19/11/2025)
+    סכום: ($2,151.00)
+    Expenses Category: Marketing & Advertising
+    Chart of Accounts: 911003
+
+==========================================
+קטגוריה: Technology
+==========================================
+
+17. SAS CADOA (11/12/2025)
+    סכום: ($2,691.60)
+    Expenses Category: Technology
+    Chart of Accounts: 901005
+
+==========================================
+קטגוריה: Bank Fees & interest
+==========================================
+
+18. Google LLC - ACCTVERIFY (08/12/2025)
+    סכום: $0.01
+    Expenses Category: Bank Fees & interest
+    Chart of Accounts: 990001
+
+==========================================
+סה"כ: 18 תנועות
+==========================================
