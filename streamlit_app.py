@@ -163,6 +163,7 @@ def parse_valley(rows, coa_lookup, cat_coa):
             "key": key, "date": dt, "date_formatted": format_date(dt),
             "description": desc, "amount": amount, "category": category,
             "coa_debit": coa_debit, "coa_credit": coa_credit,
+            "type_ind": type_ind,
         })
 
     results.sort(key=lambda t: t["date"])
@@ -251,8 +252,60 @@ def _add_named_range(wb, name, ws_title, min_col, min_row, max_col, max_row):
     wb.defined_names.add(dn)
 
 
+def _add_valley_bank_sheet(wb, data):
+    """Add Israeli-style bank statement sheet (דף בנק) to Valley workbook."""
+    ws = wb.create_sheet(title="דף בנק")
+    headers = ["תאריך", "תאריך ערך", "תיאור", "חובה מטח", "זכות מטח", "יתרה"]
+    ws.append(headers)
+
+    header_fill = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="right")
+
+    balance = 0.0
+    for t in data:
+        is_debit = t.get("type_ind", "DEBIT") == "DEBIT"
+        debit_val = t["amount"] if is_debit else None
+        credit_val = t["amount"] if not is_debit else None
+        # Balance: credits add, debits subtract
+        if is_debit:
+            balance -= t["amount"]
+        else:
+            balance += t["amount"]
+
+        ws.append([
+            t["date_formatted"],  # תאריך
+            t["date_formatted"],  # תאריך ערך (same - Valley has only one date)
+            t["description"],     # תיאור
+            debit_val,            # חובה מטח
+            credit_val,           # זכות מטח
+            balance,              # יתרה
+        ])
+
+    # Format number columns (D=חובה, E=זכות, F=יתרה)
+    for row in ws.iter_rows(min_row=2, min_col=4, max_col=6):
+        for cell in row:
+            if cell.value is not None:
+                cell.number_format = '#,##0.00'
+
+    # Column widths
+    ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 12
+    ws.column_dimensions["C"].width = 42
+    ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["E"].width = 14
+    ws.column_dimensions["F"].width = 16
+
+    # Named range
+    if len(data) > 0:
+        _add_named_range(wb, "VALLEY_BANK", "דף בנק", 1, 2, 6, ws.max_row)
+
+
 def build_valley_excel(data):
-    """Build Valley Bank Excel with VALLEYTRANS sheet."""
+    """Build Valley Bank Excel with VALLEYTRANS + דף בנק sheets."""
     wb = Workbook()
     ws = wb.active
     ws.title = "VALLEYTRANS"
@@ -292,6 +345,9 @@ def build_valley_excel(data):
     # Named range for data area (excluding header)
     if len(data) > 0:
         _add_named_range(wb, "VALLEYTRANS", "VALLEYTRANS", 1, 2, 7, ws.max_row)
+
+    # Add Israeli bank statement sheet
+    _add_valley_bank_sheet(wb, data)
 
     return wb
 

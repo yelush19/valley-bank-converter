@@ -282,7 +282,7 @@ class ValleyParser {
             const catMatch = this.catCoa[category];
             const coaDebit = coaMatch ? coaMatch[0] : (catMatch ? catMatch[0] : '');
             const coaCredit = coaMatch ? coaMatch[1] : (catMatch ? catMatch[1] : '');
-            results.push({ key, date: dt, dateFormatted: this.formatDate(dt), description: desc, amount, category, coaDebit, coaCredit, rawDate: dateStr });
+            results.push({ key, date: dt, dateFormatted: this.formatDate(dt), description: desc, amount, category, coaDebit, coaCredit, typeInd, rawDate: dateStr });
         }
         results.sort((a,b) => a.date - b.date);
         return results;
@@ -577,10 +577,34 @@ class App {
         }
         XLSX.utils.book_append_sheet(wb, ws, 'VALLEYTRANS');
         // Named range for data area
+        if(!wb.Workbook) wb.Workbook = {};
+        if(!wb.Workbook.Names) wb.Workbook.Names = [];
+        if(data.length > 0) {
+            wb.Workbook.Names.push({Name:'VALLEYTRANS', Ref:'VALLEYTRANS!$A$2:$G$'+(data.length+1)});
+        }
+        // Add Israeli bank statement sheet
+        this.buildValleyBankSheet(wb, data);
+    }
+    buildValleyBankSheet(wb, data) {
+        const rows = [['תאריך','תאריך ערך','תיאור','חובה מטח','זכות מטח','יתרה']];
+        let balance = 0;
+        data.forEach(t => {
+            const isDebit = (t.typeInd || 'DEBIT') === 'DEBIT';
+            const debitVal = isDebit ? t.amount : null;
+            const creditVal = isDebit ? null : t.amount;
+            if(isDebit) balance -= t.amount; else balance += t.amount;
+            rows.push([t.dateFormatted, t.dateFormatted, t.description, debitVal, creditVal, Math.round(balance*100)/100]);
+        });
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{wch:12},{wch:12},{wch:42},{wch:14},{wch:14},{wch:16}];
+        for(let i=2;i<=rows.length;i++) {
+            ['D','E','F'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
+        }
+        XLSX.utils.book_append_sheet(wb, ws, 'דף בנק');
         if(data.length > 0) {
             if(!wb.Workbook) wb.Workbook = {};
             if(!wb.Workbook.Names) wb.Workbook.Names = [];
-            wb.Workbook.Names.push({Name:'VALLEYTRANS', Ref:'VALLEYTRANS!$A$2:$G$'+(data.length+1)});
+            wb.Workbook.Names.push({Name:'VALLEY_BANK', Ref:'דף בנק!$A$2:$F$'+(data.length+1)});
         }
     }
     buildPayEmSheets(wb, data) {
