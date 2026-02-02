@@ -3,5 +3,9 @@
 nul
 _temp_*
 
+# Python cache
+__pycache__/
+*.pyc
+
 # Claude project files
 .claude/
