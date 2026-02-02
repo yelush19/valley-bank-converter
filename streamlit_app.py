@@ -4,7 +4,7 @@ import io
 import re
 import json
 from datetime import datetime
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill, numbers
 
 # ===== PAGE CONFIG =====
@@ -271,9 +271,8 @@ def build_valley_excel(data):
 
 
 def build_payem_excel(data):
-    """Build PayEm Excel with 4 sheets."""
+    """Build PayEm Excel with 4 sheets. Returns (workbook, integrity_checks)."""
     wb = Workbook()
-    # Remove default sheet
     wb.remove(wb.active)
 
     inc_data = [t for t in data if "Inc" in t["subsidiary"]]
@@ -284,14 +283,51 @@ def build_payem_excel(data):
     _add_payem_sheet(wb, ltd_data, "רישום LTD", "ltd")
     _add_payem_sheet(wb, ltd_data, "נגדית לINC של LTD", "negdit")
 
-    return wb
+    # ===== INTEGRITY CHECKS =====
+    # Check 1: INC + LTD = PAYEMDATA (row count)
+    count_ok = len(inc_data) + len(ltd_data) == len(data)
+
+    # Check 2: sum debit in DATA = sum debit in INC + LTD
+    data_debit = sum(t["abs_amount"] for t in data if t["net_amount"] <= 0)
+    data_credit = sum(t["abs_amount"] for t in data if t["net_amount"] > 0)
+    inc_debit = sum(t["abs_amount"] for t in inc_data if t["net_amount"] <= 0)
+    inc_credit = sum(t["abs_amount"] for t in inc_data if t["net_amount"] > 0)
+    ltd_debit = sum(t["abs_amount"] for t in ltd_data if t["net_amount"] <= 0)
+    ltd_credit = sum(t["abs_amount"] for t in ltd_data if t["net_amount"] > 0)
+
+    debit_ok = abs(data_debit - (inc_debit + ltd_debit)) < 0.01
+    credit_ok = abs(data_credit - (inc_credit + ltd_credit)) < 0.01
+
+    checks = {
+        "count_ok": count_ok,
+        "count_data": len(data), "count_inc": len(inc_data), "count_ltd": len(ltd_data),
+        "debit_ok": debit_ok,
+        "data_debit": data_debit, "inc_debit": inc_debit, "ltd_debit": ltd_debit,
+        "credit_ok": credit_ok,
+        "data_credit": data_credit, "inc_credit": inc_credit, "ltd_credit": ltd_credit,
+    }
+
+    return wb, checks
 
 
 def _add_payem_sheet(wb, data, sheet_name, mode):
-    """Add a PayEm sheet to workbook."""
+    """Add a PayEm sheet to workbook.
+    mode: 'all' = PAYEMDATA (raw data with Transaction amount)
+          'inc' = פקודה INC
+          'ltd' = רישום LTD
+          'negdit' = נגדית לINC של LTD
+    """
     ws = wb.create_sheet(title=sheet_name)
-    headers = ["תיאור", "Transaction amount", "זכות מטח", "חובה מטח",
-               "אסמכתא 1", "אסמכתא 2", 'ח"ן זכות', 'ח"ן חובה', "תאריך", "שיוך"]
+
+    if mode == "all":
+        # PAYEMDATA = raw data, includes Transaction amount
+        headers = ["תיאור", "Transaction amount", "זכות מטח", "חובה מטח",
+                   "אסמכתא 1", "אסמכתא 2", 'ח"ן זכות', 'ח"ן חובה', "תאריך", "שיוך"]
+    else:
+        # Pekuda sheets: no Transaction amount column
+        headers = ["תיאור", "זכות מטח", "חובה מטח",
+                   "אסמכתא 1", "אסמכתא 2", 'ח"ן זכות', 'ח"ן חובה', "תאריך", "שיוך"]
+
     ws.append(headers)
 
     header_fill = PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")
@@ -302,49 +338,77 @@ def _add_payem_sheet(wb, data, sheet_name, mode):
         cell.alignment = Alignment(horizontal="right")
 
     for t in data:
-        if mode == "ltd":
-            coa_cr = t["ltd_coa_credit"] or ""
-            coa_dr = t["ltd_coa_debit"] or ""
-        elif mode == "negdit":
-            coa_cr = "502010"
-            coa_dr = "300001"
-        else:
-            coa_cr = t["coa_credit"]
-            coa_dr = t["coa_debit"]
+        is_credit = t["net_amount"] > 0  # positive = credit/refund
 
-        if mode in ("ltd", "negdit"):
-            credit_val = t["abs_amount"]
-            debit_val = t["abs_amount"]
+        # Determine CoA based on mode
+        if mode == "ltd":
+            base_coa_cr = t["ltd_coa_credit"] or ""
+            base_coa_dr = t["ltd_coa_debit"] or ""
+        elif mode == "negdit":
+            base_coa_cr = "502010"
+            base_coa_dr = "300001"
+        elif mode == "inc":
+            base_coa_cr = t["coa_credit"]
+            base_coa_dr = t["coa_debit"]
         else:
+            # PAYEMDATA - original CoA, no flip
+            base_coa_cr = t["coa_credit"]
+            base_coa_dr = t["coa_debit"]
+
+        # For pekuda sheets (inc, ltd, negdit): flip CoA on credits
+        if mode != "all" and is_credit:
+            coa_cr = base_coa_dr  # flip!
+            coa_dr = base_coa_cr  # flip!
+        else:
+            coa_cr = base_coa_cr
+            coa_dr = base_coa_dr
+
+        # Amount columns: always both = abs amount (double-entry)
+        abs_amt = t["abs_amount"]
+
+        if mode == "all":
+            # PAYEMDATA: split credit/debit + include Transaction amount
             credit_val = t["credit_amount"]
             debit_val = t["debit_amount"]
+            ws.append([
+                t["description"], t["net_amount"], credit_val, debit_val,
+                t["ref1"], t["ref2"], coa_cr, coa_dr, t["date"], t["subsidiary"]
+            ])
+        else:
+            # Pekuda sheets: both columns = abs amount, no Transaction amount
+            ws.append([
+                t["description"], abs_amt, abs_amt,
+                t["ref1"], t["ref2"], coa_cr, coa_dr, t["date"], t["subsidiary"]
+            ])
 
-        ws.append([
-            t["description"], t["net_amount"], credit_val, debit_val,
-            t["ref1"], t["ref2"], coa_cr, coa_dr, t["date"], t["subsidiary"]
-        ])
+    # Format number columns
+    if mode == "all":
+        num_cols = (2, 4)  # B, C, D
+        date_col = 9       # I
+        ref2_col = 6       # F
+        col_widths = {"A": 30, "B": 16, "C": 14, "D": 14, "E": 14, "F": 10, "G": 12, "H": 12, "I": 12, "J": 22}
+    else:
+        num_cols = (2, 3)  # B, C
+        date_col = 8       # H
+        ref2_col = 5       # E
+        col_widths = {"A": 30, "B": 14, "C": 14, "D": 14, "E": 10, "F": 12, "G": 12, "H": 12, "I": 22}
 
-    # Format number columns (B, C, D)
-    for row in ws.iter_rows(min_row=2, min_col=2, max_col=4):
+    for row in ws.iter_rows(min_row=2, min_col=num_cols[0], max_col=num_cols[1]):
         for cell in row:
             if cell.value is not None:
                 cell.number_format = '#,##0.00'
 
-    # Format date column (I)
-    for row in ws.iter_rows(min_row=2, min_col=9, max_col=9):
+    for row in ws.iter_rows(min_row=2, min_col=date_col, max_col=date_col):
         for cell in row:
             if isinstance(cell.value, datetime):
                 cell.number_format = 'DD/MM/YYYY'
 
-    # ref2 (F) as text
-    for row in ws.iter_rows(min_row=2, min_col=6, max_col=6):
+    for row in ws.iter_rows(min_row=2, min_col=ref2_col, max_col=ref2_col):
         for cell in row:
             if cell.value is not None:
                 cell.value = str(cell.value)
 
-    # Column widths
-    widths = {"A": 30, "B": 16, "C": 14, "D": 14, "E": 14, "F": 10, "G": 12, "H": 12, "I": 12, "J": 22}
-    for col, w in widths.items():
+    for col, w in col_widths.items():
         ws.column_dimensions[col].width = w
 
 
@@ -385,6 +449,126 @@ def add_to_history(file_type, keys, file_name):
 
 def get_coa(coa_type):
     return st.session_state["coa"].get(coa_type, {})
+
+
+def learn_coa_from_excel(file_bytes):
+    """Extract CoA mappings from a corrected Excel file.
+    Returns dict with stats and learned mappings."""
+    wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
+    sheets = wb.sheetnames
+    result = {"type": None, "new_payem": 0, "new_ltd": 0, "new_valley": 0, "updated": 0, "details": []}
+
+    # Detect type by sheet names
+    if "PAYEMDATA" in sheets or any("INC" in s for s in sheets):
+        result["type"] = "payem"
+        # Read PAYEMDATA sheet (has all transactions with CoA)
+        ws = wb["PAYEMDATA"] if "PAYEMDATA" in sheets else None
+        if ws:
+            headers = [cell.value for cell in ws[1]]
+            # Find column indices
+            desc_idx = headers.index("תיאור") if "תיאור" in headers else 0
+            sub_idx = headers.index("שיוך") if "שיוך" in headers else -1
+            coa_cr_idx = headers.index('ח"ן זכות') if 'ח"ן זכות' in headers else -1
+            coa_dr_idx = headers.index('ח"ן חובה') if 'ח"ן חובה' in headers else -1
+
+            if coa_cr_idx == -1 or coa_dr_idx == -1:
+                result["details"].append('לא נמצאו עמודות ח"ן בגיליון PAYEMDATA')
+                return result
+
+            payem_coa = st.session_state["coa"].get("payem", {})
+            ltd_coa = st.session_state["coa"].get("ltd", {})
+
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
+                vals = [cell.value for cell in row]
+                merchant = str(vals[desc_idx] or "").strip()
+                subsidiary = str(vals[sub_idx] or "").strip() if sub_idx >= 0 else ""
+                coa_cr = str(vals[coa_cr_idx] or "").strip()
+                coa_dr = str(vals[coa_dr_idx] or "").strip()
+
+                if not merchant or not coa_cr or not coa_dr:
+                    continue
+
+                # PayEm CoA: key = "merchant|subsidiary"
+                payem_key = f"{merchant}|{subsidiary}"
+                if payem_key not in payem_coa:
+                    payem_coa[payem_key] = [coa_cr, coa_dr]
+                    result["new_payem"] += 1
+                    result["details"].append(f"PayEm חדש: {payem_key} → [{coa_cr}, {coa_dr}]")
+                elif payem_coa[payem_key] != [coa_cr, coa_dr]:
+                    payem_coa[payem_key] = [coa_cr, coa_dr]
+                    result["updated"] += 1
+
+                # LTD CoA: key = merchant only (for LTD subsidiary)
+                if "LTD" in subsidiary:
+                    # For LTD, the PAYEMDATA CoA uses 300001 for Inc-side,
+                    # but we need the LTD-system CoA (104000 based)
+                    # Check if LTD sheet exists for accurate CoA
+                    ltd_ws = None
+                    for s in sheets:
+                        if "LTD" in s and "נגדית" not in s:
+                            ltd_ws = wb[s]
+                            break
+
+                    if ltd_ws and merchant not in ltd_coa:
+                        ltd_headers = [cell.value for cell in ltd_ws[1]]
+                        ltd_cr_idx = ltd_headers.index('ח"ן זכות') if 'ח"ן זכות' in ltd_headers else -1
+                        ltd_dr_idx = ltd_headers.index('ח"ן חובה') if 'ח"ן חובה' in ltd_headers else -1
+                        if ltd_cr_idx >= 0 and ltd_dr_idx >= 0:
+                            for ltd_row in ltd_ws.iter_rows(min_row=2, max_row=ltd_ws.max_row, values_only=False):
+                                ltd_vals = [cell.value for cell in ltd_row]
+                                ltd_merchant = str(ltd_vals[0] or "").strip()
+                                if ltd_merchant == merchant:
+                                    lcr = str(ltd_vals[ltd_cr_idx] or "").strip()
+                                    ldr = str(ltd_vals[ltd_dr_idx] or "").strip()
+                                    if lcr and ldr:
+                                        ltd_coa[merchant] = [lcr, ldr]
+                                        result["new_ltd"] += 1
+                                        result["details"].append(f"LTD חדש: {merchant} → [{lcr}, {ldr}]")
+                                    break
+
+            st.session_state["coa"]["payem"] = payem_coa
+            st.session_state["coa"]["ltd"] = ltd_coa
+
+    elif "VALLEYTRANS" in sheets:
+        result["type"] = "valley"
+        ws = wb["VALLEYTRANS"]
+        headers = [cell.value for cell in ws[1]]
+        desc_idx = headers.index("תיאור") if "תיאור" in headers else 1
+        cat_idx = headers.index("קטגוריה") if "קטגוריה" in headers else -1
+        coa_dr_idx = headers.index('ח"ן חובה') if 'ח"ן חובה' in headers else -1
+        coa_cr_idx = headers.index('ח"ן זכות') if 'ח"ן זכות' in headers else -1
+
+        if coa_dr_idx == -1 or coa_cr_idx == -1:
+            result["details"].append('לא נמצאו עמודות ח"ן בגיליון VALLEYTRANS')
+            return result
+
+        valley_coa = st.session_state["coa"].get("valley", {})
+
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
+            vals = [cell.value for cell in row]
+            desc = str(vals[desc_idx] or "").strip()
+            category = str(vals[cat_idx] or "").strip() if cat_idx >= 0 else ""
+            coa_dr = str(vals[coa_dr_idx] or "").strip()
+            coa_cr = str(vals[coa_cr_idx] or "").strip()
+
+            if not desc or not coa_dr or not coa_cr:
+                continue
+
+            valley_key = f"{desc}|{category}"
+            if valley_key not in valley_coa:
+                valley_coa[valley_key] = [coa_dr, coa_cr]
+                result["new_valley"] += 1
+                result["details"].append(f"Valley חדש: {valley_key} → [{coa_dr}, {coa_cr}]")
+            elif valley_coa[valley_key] != [coa_dr, coa_cr]:
+                valley_coa[valley_key] = [coa_dr, coa_cr]
+                result["updated"] += 1
+
+        st.session_state["coa"]["valley"] = valley_coa
+
+    else:
+        result["details"].append("לא זוהה סוג הקובץ - לא נמצאו גיליונות PAYEMDATA או VALLEYTRANS")
+
+    return result
 
 
 # ===== MAIN APP =====
@@ -471,8 +655,8 @@ def main():
         coa_json = json.dumps(st.session_state["coa"], ensure_ascii=False, indent=2)
         st.download_button('ייצא טבלת ח"ן', coa_json, "coa_lookup.json", "application/json")
 
-        # Import CoA
-        coa_file = st.file_uploader('ייבא טבלת ח"ן', type=["json"], key="coa_import")
+        # Import CoA from JSON
+        coa_file = st.file_uploader('ייבא טבלת ח"ן (JSON)', type=["json"], key="coa_import")
         if coa_file:
             try:
                 coa_data = json.loads(coa_file.read().decode("utf-8"))
@@ -480,6 +664,36 @@ def main():
                 st.success('טבלת ח"ן עודכנה בהצלחה!')
             except Exception as e:
                 st.error(f"שגיאה: {e}")
+
+        # Learn CoA from corrected Excel
+        st.divider()
+        st.subheader('למידת ח"ן מאקסל מתוקן')
+        st.caption('העלה אקסל מתוקן כדי ללמוד חשבונות חדשים')
+        learn_file = st.file_uploader('העלה אקסל מתוקן', type=["xlsx"], key="coa_learn")
+        if learn_file:
+            try:
+                result = learn_coa_from_excel(learn_file.read())
+                if result["type"] is None:
+                    st.warning("לא זוהה סוג הקובץ")
+                else:
+                    total_new = result["new_payem"] + result["new_ltd"] + result["new_valley"]
+                    total_changes = total_new + result["updated"]
+                    if total_changes == 0:
+                        st.info('לא נמצאו חשבונות חדשים - טבלת ח"ן כבר מעודכנת')
+                    else:
+                        if result["new_payem"] > 0:
+                            st.success(f'{result["new_payem"]} חשבונות PayEm חדשים')
+                        if result["new_ltd"] > 0:
+                            st.success(f'{result["new_ltd"]} חשבונות LTD חדשים')
+                        if result["new_valley"] > 0:
+                            st.success(f'{result["new_valley"]} חשבונות Valley חדשים')
+                        if result["updated"] > 0:
+                            st.info(f'{result["updated"]} חשבונות עודכנו')
+                        with st.expander("פרטים"):
+                            for d in result["details"][:50]:
+                                st.text(d)
+            except Exception as e:
+                st.error(f"שגיאה בקריאת הקובץ: {e}")
 
     # ===== FILE UPLOAD =====
     uploaded_file = st.file_uploader("העלה קובץ CSV (Valley Bank / PayEm)", type=["csv"], key="csv_upload")
@@ -591,19 +805,40 @@ def main():
 
         if file_type == "valley":
             wb = build_valley_excel(data)
+            checks = None
         else:
-            wb = build_payem_excel(data)
+            wb, checks = build_payem_excel(data)
 
         today = datetime.now()
         prefix = "Valley_Bank" if file_type == "valley" else "PayEm"
         filename = f"{prefix}_{today.day}_{today.month}_{today.year}.xlsx"
+
+        # Show integrity checks for PayEm
+        if checks:
+            st.subheader("בדיקות שלמות")
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                if checks["count_ok"]:
+                    st.success(f"שורות: DATA({checks['count_data']}) = INC({checks['count_inc']}) + LTD({checks['count_ltd']})")
+                else:
+                    st.error(f"שורות: DATA({checks['count_data']}) != INC({checks['count_inc']}) + LTD({checks['count_ltd']})")
+            with c2:
+                if checks["debit_ok"]:
+                    st.success(f"חובה: ${checks['data_debit']:,.2f} = INC(${checks['inc_debit']:,.2f}) + LTD(${checks['ltd_debit']:,.2f})")
+                else:
+                    st.error(f"חובה: DATA ${checks['data_debit']:,.2f} != INC(${checks['inc_debit']:,.2f}) + LTD(${checks['ltd_debit']:,.2f})")
+            with c3:
+                if checks["credit_ok"]:
+                    st.success(f"זכות: ${checks['data_credit']:,.2f} = INC(${checks['inc_credit']:,.2f}) + LTD(${checks['ltd_credit']:,.2f})")
+                else:
+                    st.error(f"זכות: DATA ${checks['data_credit']:,.2f} != INC(${checks['inc_credit']:,.2f}) + LTD(${checks['ltd_credit']:,.2f})")
 
         excel_bytes = workbook_to_bytes(wb)
 
         col_dl, col_save = st.columns(2)
         with col_dl:
             st.download_button(
-                "📥 הורד קובץ Excel",
+                "הורד קובץ Excel",
                 excel_bytes,
                 filename,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -611,7 +846,7 @@ def main():
             )
 
         with col_save:
-            if st.button("💾 שמור בהיסטוריה"):
+            if st.button("שמור בהיסטוריה"):
                 keys = [t["key"] for t in data]
                 add_to_history(file_type, keys, uploaded_file.name)
                 st.success(f"{len(data)} תנועות נשמרו בהיסטוריה!")

@@ -525,11 +525,22 @@ class App {
         const prefix = this.detectedType === 'valley' ? 'Valley_Bank' : 'PayEm';
         const fn = prefix + '_' + today.getDate() + '_' + (today.getMonth()+1) + '_' + today.getFullYear() + '.xlsx';
         XLSX.writeFile(wb, fn);
+        // Show integrity checks for PayEm
+        if(this.detectedType === 'payem' && this.lastIntegrityChecks) {
+            const c = this.lastIntegrityChecks;
+            let msg = 'בדיקות שלמות: ';
+            msg += (c.countOk ? '✅' : '❌') + ` שורות: DATA(${c.countData})=INC(${c.countInc})+LTD(${c.countLtd}) | `;
+            msg += (c.debitOk ? '✅' : '❌') + ` חובה: $${c.dataDebit.toFixed(2)}=INC($${c.incDebit.toFixed(2)})+LTD($${c.ltdDebit.toFixed(2)}) | `;
+            msg += (c.creditOk ? '✅' : '❌') + ` זכות: $${c.dataCredit.toFixed(2)}=INC($${c.incCredit.toFixed(2)})+LTD($${c.ltdCredit.toFixed(2)})`;
+            const allOk = c.countOk && c.debitOk && c.creditOk;
+            this.showMsg(msg, allOk ? 'success' : 'error');
+        } else {
+            this.showMsg('הקובץ הורד בהצלחה! '+data.length+' תנועות','success');
+        }
         // Save processed keys to history
         const keys = data.map(t => t.key);
         this.storage.addKeys(this.detectedType, keys, this.fileName);
         this.updateHistoryPanel();
-        this.showMsg('הקובץ הורד בהצלחה! '+data.length+' תנועות נשמרו בהיסטוריה','success');
     }
     buildValleySheet(wb, data) {
         const rows = [['תאריך','תיאור','חובה','זכות','קטגוריה','ח"ן חובה','ח"ן זכות']];
@@ -552,51 +563,71 @@ class App {
         this.addPayEmSheet(wb, ltdData, 'רישום LTD', 'ltd');
         // Sheet 4: נגדית לINC של LTD
         this.addPayEmSheet(wb, ltdData, 'נגדית לINC של LTD', 'negdit');
+        // Integrity checks
+        this.lastIntegrityChecks = this.checkIntegrity(data, incData, ltdData);
+    }
+    checkIntegrity(data, incData, ltdData) {
+        const countOk = incData.length + ltdData.length === data.length;
+        const dataDebit = data.filter(t=>t.netAmount<=0).reduce((s,t)=>s+t.absAmount,0);
+        const dataCredit = data.filter(t=>t.netAmount>0).reduce((s,t)=>s+t.absAmount,0);
+        const incDebit = incData.filter(t=>t.netAmount<=0).reduce((s,t)=>s+t.absAmount,0);
+        const incCredit = incData.filter(t=>t.netAmount>0).reduce((s,t)=>s+t.absAmount,0);
+        const ltdDebit = ltdData.filter(t=>t.netAmount<=0).reduce((s,t)=>s+t.absAmount,0);
+        const ltdCredit = ltdData.filter(t=>t.netAmount>0).reduce((s,t)=>s+t.absAmount,0);
+        const debitOk = Math.abs(dataDebit - (incDebit+ltdDebit)) < 0.01;
+        const creditOk = Math.abs(dataCredit - (incCredit+ltdCredit)) < 0.01;
+        return {countOk, countData:data.length, countInc:incData.length, countLtd:ltdData.length, debitOk, dataDebit, incDebit, ltdDebit, creditOk, dataCredit, incCredit, ltdCredit};
     }
     addPayEmSheet(wb, data, sheetName, mode) {
-        const rows = [['תיאור','Transaction amount','זכות מטח','חובה מטח','אסמכתא 1','אסמכתא 2','ח"ן זכות','ח"ן חובה','תאריך','שיוך']];
+        let headers, colWidths;
+        if(mode === 'all') {
+            // PAYEMDATA: raw data with Transaction amount column
+            headers = ['תיאור','Transaction amount','זכות מטח','חובה מטח','אסמכתא 1','אסמכתא 2','ח"ן זכות','ח"ן חובה','תאריך','שיוך'];
+            colWidths = [{wch:30},{wch:16},{wch:14},{wch:14},{wch:14},{wch:10},{wch:12},{wch:12},{wch:12},{wch:22}];
+        } else {
+            // Pekuda sheets: no Transaction amount column
+            headers = ['תיאור','זכות מטח','חובה מטח','אסמכתא 1','אסמכתא 2','ח"ן זכות','ח"ן חובה','תאריך','שיוך'];
+            colWidths = [{wch:30},{wch:14},{wch:14},{wch:14},{wch:10},{wch:12},{wch:12},{wch:12},{wch:22}];
+        }
+        const rows = [headers];
         data.forEach(t => {
+            const isCredit = t.netAmount > 0;
+            // Determine base CoA
+            let baseCr, baseDr;
+            if(mode === 'ltd') { baseCr = t.ltdCoaCredit || ''; baseDr = t.ltdCoaDebit || ''; }
+            else if(mode === 'negdit') { baseCr = '502010'; baseDr = '300001'; }
+            else if(mode === 'inc') { baseCr = t.coaCredit; baseDr = t.coaDebit; }
+            else { baseCr = t.coaCredit; baseDr = t.coaDebit; }
+            // Flip CoA on credits for pekuda sheets
             let coaCr, coaDr;
-            if(mode === 'ltd') {
-                coaCr = t.ltdCoaCredit || '';
-                coaDr = t.ltdCoaDebit || '';
-            } else if(mode === 'negdit') {
-                coaCr = '502010';
-                coaDr = '300001';
+            if(mode !== 'all' && isCredit) { coaCr = baseDr; coaDr = baseCr; }
+            else { coaCr = baseCr; coaDr = baseDr; }
+            if(mode === 'all') {
+                // PAYEMDATA: split credit/debit + Transaction amount
+                const creditVal = t.creditAmount != null ? t.creditAmount : null;
+                const debitVal = t.debitAmount != null ? t.debitAmount : null;
+                rows.push([t.description, t.netAmount, creditVal, debitVal, t.ref1, t.ref2, coaCr, coaDr, t.date, t.subsidiary]);
             } else {
-                coaCr = t.coaCredit;
-                coaDr = t.coaDebit;
+                // Pekuda: both columns = absolute amount, no Transaction amount
+                rows.push([t.description, t.absAmount, t.absAmount, t.ref1, t.ref2, coaCr, coaDr, t.date, t.subsidiary]);
             }
-            let creditVal, debitVal;
-            if(mode === 'ltd' || mode === 'negdit') {
-                // LTD and negdit sheets: both columns show absolute amount
-                creditVal = t.absAmount;
-                debitVal = t.absAmount;
-            } else {
-                creditVal = t.creditAmount != null ? t.creditAmount : null;
-                debitVal = t.debitAmount != null ? t.debitAmount : null;
-            }
-            rows.push([
-                t.description,
-                t.netAmount,
-                creditVal,
-                debitVal,
-                t.ref1,
-                t.ref2,
-                coaCr,
-                coaDr,
-                t.date,
-                t.subsidiary
-            ]);
         });
         const ws = XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols'] = [{wch:30},{wch:16},{wch:14},{wch:14},{wch:14},{wch:10},{wch:12},{wch:12},{wch:12},{wch:22}];
-        for(let i=2;i<=rows.length;i++) {
-            ['B','C','D'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
-            // ref1 (E) = number, ref2 (F) = string
-            if(ws['E'+i] && ws['E'+i].v != null) { ws['E'+i].t='n'; }
-            if(ws['F'+i] && ws['F'+i].v != null) { ws['F'+i].t='s'; ws['F'+i].v = String(ws['F'+i].v); }
-            if(ws['I'+i] && ws['I'+i].v instanceof Date) { ws['I'+i].t='d'; ws['I'+i].z='dd/mm/yyyy'; }
+        ws['!cols'] = colWidths;
+        if(mode === 'all') {
+            for(let i=2;i<=rows.length;i++) {
+                ['B','C','D'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
+                if(ws['E'+i] && ws['E'+i].v != null) { ws['E'+i].t='n'; }
+                if(ws['F'+i] && ws['F'+i].v != null) { ws['F'+i].t='s'; ws['F'+i].v = String(ws['F'+i].v); }
+                if(ws['I'+i] && ws['I'+i].v instanceof Date) { ws['I'+i].t='d'; ws['I'+i].z='dd/mm/yyyy'; }
+            }
+        } else {
+            for(let i=2;i<=rows.length;i++) {
+                ['B','C'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
+                if(ws['D'+i] && ws['D'+i].v != null) { ws['D'+i].t='n'; }
+                if(ws['E'+i] && ws['E'+i].v != null) { ws['E'+i].t='s'; ws['E'+i].v = String(ws['E'+i].v); }
+                if(ws['H'+i] && ws['H'+i].v instanceof Date) { ws['H'+i].t='d'; ws['H'+i].z='dd/mm/yyyy'; }
+            }
         }
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
     }
