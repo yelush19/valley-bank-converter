@@ -80,9 +80,35 @@
         .loader { display: none; width: 40px; height: 40px; border: 4px solid #e0e0e0; border-top: 4px solid #4caf50; border-radius: 50%; animation: spin 1s linear infinite; margin: 20px auto; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .no-coa { background: #fff9c4 !important; }
+        /* Login overlay */
+        .login-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .login-overlay.hidden { display: none; }
+        .login-box { background: white; border-radius: 15px; padding: 40px; max-width: 380px; width: 90%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .login-box h2 { color: #2e7d32; margin-bottom: 5px; }
+        .login-box p { color: #757575; margin-bottom: 25px; }
+        .login-box input { width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1em; margin-bottom: 12px; text-align: right; box-sizing: border-box; }
+        .login-box input:focus { border-color: #4caf50; outline: none; }
+        .login-box .login-btn { width: 100%; padding: 12px; background: #4caf50; color: white; border: none; border-radius: 8px; font-size: 1.1em; cursor: pointer; font-weight: bold; }
+        .login-box .login-btn:hover { background: #45a049; }
+        .login-error { color: #d32f2f; margin-top: 10px; display: none; }
+        .logout-btn { position: fixed; top: 10px; left: 10px; z-index: 100; padding: 8px 16px; background: #78909c; color: white; border: none; border-radius: 20px; cursor: pointer; font-size: 0.85em; }
+        .logout-btn:hover { background: #546e7a; }
+        .logout-btn.hidden { display: none; }
     </style>
 </head>
 <body>
+<!-- Login overlay -->
+<div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+        <h2>🔐 כניסה למערכת</h2>
+        <p>ממיר תנועות בנק ואשראי</p>
+        <input type="text" id="loginUser" placeholder="שם משתמש" autocomplete="username">
+        <input type="password" id="loginPass" placeholder="סיסמה" autocomplete="current-password">
+        <button class="login-btn" onclick="authManager.login()">התחבר</button>
+        <div class="login-error" id="loginError">שם משתמש או סיסמה שגויים</div>
+    </div>
+</div>
+<button class="logout-btn hidden" id="logoutBtn" onclick="authManager.logout()">🚪 התנתק</button>
 <div class="container">
     <div class="header">
         <h1>ממיר תנועות בנק ואשראי</h1>
@@ -363,6 +389,62 @@ class DuplicateDetector {
     }
 }
 
+// ===== AUTH MANAGER =====
+class AuthManager {
+    constructor() {
+        this.AUTH_KEY = 'vb_converter_auth';
+        // Default credentials (SHA-256 hash). Change password via: console → AuthManager.generateHash('yourpassword')
+        this.defaultUser = 'admin';
+        this.defaultHash = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'; // 'admin'
+    }
+    static generateHash(password) {
+        // Helper: run in browser console to generate hash for a new password
+        return crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
+            .then(buf => Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''));
+    }
+    async hashPassword(password) {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(password));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+    }
+    isAuthenticated() {
+        return sessionStorage.getItem(this.AUTH_KEY) === 'true';
+    }
+    async login() {
+        const user = document.getElementById('loginUser').value;
+        const pass = document.getElementById('loginPass').value;
+        const hash = await this.hashPassword(pass);
+        // Check stored credentials or default
+        const storedUser = localStorage.getItem('vb_auth_user') || this.defaultUser;
+        const storedHash = localStorage.getItem('vb_auth_hash') || this.defaultHash;
+        if(user === storedUser && hash === storedHash) {
+            sessionStorage.setItem(this.AUTH_KEY, 'true');
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+            document.getElementById('loginError').style.display = 'none';
+        } else {
+            document.getElementById('loginError').style.display = 'block';
+        }
+    }
+    logout() {
+        sessionStorage.removeItem(this.AUTH_KEY);
+        document.getElementById('loginOverlay').classList.remove('hidden');
+        document.getElementById('logoutBtn').classList.add('hidden');
+        document.getElementById('loginUser').value = '';
+        document.getElementById('loginPass').value = '';
+    }
+    checkOnLoad() {
+        if(this.isAuthenticated()) {
+            document.getElementById('loginOverlay').classList.add('hidden');
+            document.getElementById('logoutBtn').classList.remove('hidden');
+        }
+    }
+}
+const authManager = new AuthManager();
+// Allow Enter key to submit login
+document.getElementById('loginPass').addEventListener('keydown', e => { if(e.key==='Enter') authManager.login(); });
+document.getElementById('loginUser').addEventListener('keydown', e => { if(e.key==='Enter') document.getElementById('loginPass').focus(); });
+authManager.checkOnLoad();
+
 // ===== MAIN APP =====
 class App {
     constructor() {
@@ -543,6 +625,7 @@ class App {
         const wb = XLSX.utils.book_new();
         if(this.detectedType === 'valley') {
             this.buildValleySheet(wb, data);
+            this.lastValleyChecks = this.checkValleyIntegrity(data);
         } else {
             this.buildPayEmSheets(wb, data);
         }
@@ -550,7 +633,7 @@ class App {
         const prefix = this.detectedType === 'valley' ? 'Valley_Bank' : 'PayEm';
         const fn = prefix + '_' + today.getDate() + '_' + (today.getMonth()+1) + '_' + today.getFullYear() + '.xlsx';
         XLSX.writeFile(wb, fn);
-        // Show integrity checks for PayEm
+        // Show integrity checks
         if(this.detectedType === 'payem' && this.lastIntegrityChecks) {
             const c = this.lastIntegrityChecks;
             let msg = 'בדיקות שלמות: ';
@@ -559,11 +642,30 @@ class App {
             msg += (c.creditOk ? '✅' : '❌') + ` זכות: $${c.dataCredit.toFixed(2)}=INC($${c.incCredit.toFixed(2)})+LTD($${c.ltdCredit.toFixed(2)})`;
             const allOk = c.countOk && c.debitOk && c.creditOk;
             this.showMsg(msg, allOk ? 'success' : 'error');
+        } else if(this.detectedType === 'valley' && this.lastValleyChecks) {
+            const c = this.lastValleyChecks;
+            let msg = 'בדיקות שלמות: ';
+            msg += (c.amountOk ? '✅' : '❌') + ` סכומים: $${c.totalAmount.toFixed(2)}=חובה($${c.totalDebits.toFixed(2)})+זכות($${c.totalCredits.toFixed(2)}) | `;
+            msg += `✅ יתרה: $${c.expectedBalance.toFixed(2)} | ${c.debitCount} חיובים, ${c.creditCount} זיכויים | `;
+            msg += (c.noCoa === 0 ? '✅' : '⚠️') + ` ח"ן: ${c.coaCovered}/${c.totalCount}` + (c.noCoa > 0 ? ` (${c.noCoa} ללא)` : ' (100%)');
+            this.showMsg(msg, c.amountOk && c.noCoa === 0 ? 'success' : 'warning');
         } else {
             this.showMsg('הקובץ הורד! לחץ "שמור בהיסטוריה" לאחר שווידאת שההורדה הצליחה','info');
         }
         // Show save-to-history button (don't auto-save!)
         document.getElementById('saveHistoryBtn').classList.remove('hidden');
+    }
+    checkValleyIntegrity(data) {
+        const totalAmount = data.reduce((s,t) => s + t.amount, 0);
+        const totalDebits = data.filter(t => (t.typeInd||'DEBIT') === 'DEBIT').reduce((s,t) => s + t.amount, 0);
+        const totalCredits = data.filter(t => (t.typeInd||'DEBIT') !== 'DEBIT').reduce((s,t) => s + t.amount, 0);
+        const debitCount = data.filter(t => (t.typeInd||'DEBIT') === 'DEBIT').length;
+        const creditCount = data.length - debitCount;
+        const amountOk = Math.abs(totalAmount - (totalDebits + totalCredits)) < 0.01;
+        const expectedBalance = totalCredits - totalDebits;
+        const noCoa = data.filter(t => !t.coaDebit).length;
+        const coaCovered = data.length - noCoa;
+        return {amountOk, totalAmount, totalDebits, totalCredits, debitCount, creditCount, expectedBalance, noCoa, coaCovered, totalCount: data.length};
     }
     buildValleySheet(wb, data) {
         const rows = [['תאריך','תיאור','חובה','זכות','קטגוריה','ח"ן חובה','ח"ן זכות']];

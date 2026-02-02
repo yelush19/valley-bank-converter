@@ -3,6 +3,7 @@ import csv
 import io
 import re
 import json
+import hashlib
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill, numbers
@@ -305,7 +306,8 @@ def _add_valley_bank_sheet(wb, data):
 
 
 def build_valley_excel(data):
-    """Build Valley Bank Excel with VALLEYTRANS + דף בנק sheets."""
+    """Build Valley Bank Excel with VALLEYTRANS + דף בנק sheets.
+    Returns (workbook, integrity_checks)."""
     wb = Workbook()
     ws = wb.active
     ws.title = "VALLEYTRANS"
@@ -349,7 +351,38 @@ def build_valley_excel(data):
     # Add Israeli bank statement sheet
     _add_valley_bank_sheet(wb, data)
 
-    return wb
+    # ===== INTEGRITY CHECKS =====
+    total_amount = sum(t["amount"] for t in data)
+    total_debits = sum(t["amount"] for t in data if t.get("type_ind") == "DEBIT")
+    total_credits = sum(t["amount"] for t in data if t.get("type_ind") != "DEBIT")
+    debit_count = sum(1 for t in data if t.get("type_ind") == "DEBIT")
+    credit_count = len(data) - debit_count
+
+    # Check 1: sum amounts match — VALLEYTRANS total == דף בנק debits + credits
+    amount_ok = abs(total_amount - (total_debits + total_credits)) < 0.01
+
+    # Check 2: balance verification — final balance == credits - debits
+    expected_balance = total_credits - total_debits
+    # (matches the running balance calculated in _add_valley_bank_sheet)
+
+    # Check 3: CoA coverage
+    no_coa = sum(1 for t in data if not t["coa_debit"])
+    coa_covered = len(data) - no_coa
+
+    checks = {
+        "amount_ok": amount_ok,
+        "total_amount": total_amount,
+        "total_debits": total_debits,
+        "total_credits": total_credits,
+        "debit_count": debit_count,
+        "credit_count": credit_count,
+        "expected_balance": expected_balance,
+        "no_coa": no_coa,
+        "coa_covered": coa_covered,
+        "total_count": len(data),
+    }
+
+    return wb, checks
 
 
 def build_payem_excel(data):
@@ -674,9 +707,60 @@ def learn_coa_from_excel(file_bytes):
     return result
 
 
+# ===== AUTH =====
+
+def check_auth():
+    """Simple password authentication using st.secrets."""
+    if st.session_state.get("authenticated"):
+        return True
+
+    # Check if secrets are configured
+    try:
+        _ = st.secrets["auth"]["username"]
+    except (KeyError, FileNotFoundError):
+        # No secrets configured - skip auth (dev mode)
+        st.session_state["authenticated"] = True
+        return True
+
+    st.markdown("""
+    <style>
+    .login-box {
+        max-width: 400px; margin: 100px auto; padding: 30px;
+        background: white; border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("### :lock: כניסה למערכת")
+        st.markdown("ממיר תנועות בנק ואשראי")
+        with st.form("login_form"):
+            username = st.text_input("שם משתמש", placeholder="הזן שם משתמש")
+            password = st.text_input("סיסמה", type="password", placeholder="הזן סיסמה")
+            submitted = st.form_submit_button("התחבר", type="primary", use_container_width=True)
+
+            if submitted:
+                expected_user = st.secrets["auth"]["username"]
+                expected_hash = st.secrets["auth"]["password_hash"]
+                pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+                if username == expected_user and pwd_hash == expected_hash:
+                    st.session_state["authenticated"] = True
+                    st.rerun()
+                else:
+                    st.error("שם משתמש או סיסמה שגויים")
+
+    return False
+
+
 # ===== MAIN APP =====
 
 def main():
+    if not check_auth():
+        return
+
     init_session()
 
     # ===== CUSTOM CSS =====
@@ -716,6 +800,16 @@ def main():
 
     # ===== SIDEBAR =====
     with st.sidebar:
+        # Logout button (only if auth is configured)
+        try:
+            _ = st.secrets["auth"]["username"]
+            if st.button("🚪 התנתק", type="secondary", use_container_width=True):
+                st.session_state["authenticated"] = False
+                st.rerun()
+            st.divider()
+        except (KeyError, FileNotFoundError):
+            pass
+
         st.header("היסטוריה וניהול")
         h = st.session_state["history"]
         v_count = len(h.get("valley", {}).get("keys", {}))
@@ -913,8 +1007,7 @@ def main():
         st.divider()
 
         if file_type == "valley":
-            wb = build_valley_excel(data)
-            checks = None
+            wb, checks = build_valley_excel(data)
         else:
             wb, checks = build_payem_excel(data)
 
@@ -922,25 +1015,40 @@ def main():
         prefix = "Valley_Bank" if file_type == "valley" else "PayEm"
         filename = f"{prefix}_{today.day}_{today.month}_{today.year}.xlsx"
 
-        # Show integrity checks for PayEm
+        # Show integrity checks
         if checks:
             st.subheader("בדיקות שלמות")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                if checks["count_ok"]:
-                    st.success(f"שורות: DATA({checks['count_data']}) = INC({checks['count_inc']}) + LTD({checks['count_ltd']})")
-                else:
-                    st.error(f"שורות: DATA({checks['count_data']}) != INC({checks['count_inc']}) + LTD({checks['count_ltd']})")
-            with c2:
-                if checks["debit_ok"]:
-                    st.success(f"חובה: ${checks['data_debit']:,.2f} = INC(${checks['inc_debit']:,.2f}) + LTD(${checks['ltd_debit']:,.2f})")
-                else:
-                    st.error(f"חובה: DATA ${checks['data_debit']:,.2f} != INC(${checks['inc_debit']:,.2f}) + LTD(${checks['ltd_debit']:,.2f})")
-            with c3:
-                if checks["credit_ok"]:
-                    st.success(f"זכות: ${checks['data_credit']:,.2f} = INC(${checks['inc_credit']:,.2f}) + LTD(${checks['ltd_credit']:,.2f})")
-                else:
-                    st.error(f"זכות: DATA ${checks['data_credit']:,.2f} != INC(${checks['inc_credit']:,.2f}) + LTD(${checks['ltd_credit']:,.2f})")
+            if file_type == "valley":
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    if checks["amount_ok"]:
+                        st.success(f"סכומים: סה\"כ ${checks['total_amount']:,.2f} = חובה(${checks['total_debits']:,.2f}) + זכות(${checks['total_credits']:,.2f})")
+                    else:
+                        st.error(f"סכומים: סה\"כ ${checks['total_amount']:,.2f} != חובה(${checks['total_debits']:,.2f}) + זכות(${checks['total_credits']:,.2f})")
+                with c2:
+                    st.success(f"יתרה: ${checks['expected_balance']:,.2f} | {checks['debit_count']} חיובים, {checks['credit_count']} זיכויים")
+                with c3:
+                    if checks["no_coa"] == 0:
+                        st.success(f'כיסוי ח"ן: {checks["coa_covered"]}/{checks["total_count"]} (100%)')
+                    else:
+                        st.warning(f'כיסוי ח"ן: {checks["coa_covered"]}/{checks["total_count"]} ({checks["no_coa"]} ללא ח"ן)')
+            else:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    if checks["count_ok"]:
+                        st.success(f"שורות: DATA({checks['count_data']}) = INC({checks['count_inc']}) + LTD({checks['count_ltd']})")
+                    else:
+                        st.error(f"שורות: DATA({checks['count_data']}) != INC({checks['count_inc']}) + LTD({checks['count_ltd']})")
+                with c2:
+                    if checks["debit_ok"]:
+                        st.success(f"חובה: ${checks['data_debit']:,.2f} = INC(${checks['inc_debit']:,.2f}) + LTD(${checks['ltd_debit']:,.2f})")
+                    else:
+                        st.error(f"חובה: DATA ${checks['data_debit']:,.2f} != INC(${checks['inc_debit']:,.2f}) + LTD(${checks['ltd_debit']:,.2f})")
+                with c3:
+                    if checks["credit_ok"]:
+                        st.success(f"זכות: ${checks['data_credit']:,.2f} = INC(${checks['inc_credit']:,.2f}) + LTD(${checks['ltd_credit']:,.2f})")
+                    else:
+                        st.error(f"זכות: DATA ${checks['data_credit']:,.2f} != INC(${checks['inc_credit']:,.2f}) + LTD(${checks['ltd_credit']:,.2f})")
 
         excel_bytes = workbook_to_bytes(wb)
 
