@@ -9,3 +9,20 @@ __pycache__/
 
 # Claude project files
 .claude/
+
+# Data files - CSV & Excel
+*.csv
+*.xlsx
+
+# Old/backup versions
+*-FIXED.html
+*-last.html
+*-last.txt
+
+# CoA data files
+coa_lookup.json
+coa_data_js.txt
+
+# Hebrew text files
+*.txt
+!requirements.txt
