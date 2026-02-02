@@ -549,8 +549,16 @@ class App {
         ws['!cols'] = [{wch:12},{wch:42},{wch:14},{wch:14},{wch:28},{wch:12},{wch:12}];
         for(let i=2;i<=rows.length;i++) {
             ['C','D'].forEach(col => { if(ws[col+i]) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
+            // CoA columns as text
+            ['F','G'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='s'; ws[col+i].v=String(ws[col+i].v); ws[col+i].z='@'; } });
         }
         XLSX.utils.book_append_sheet(wb, ws, 'VALLEYTRANS');
+        // Named range for data area
+        if(data.length > 0) {
+            if(!wb.Workbook) wb.Workbook = {};
+            if(!wb.Workbook.Names) wb.Workbook.Names = [];
+            wb.Workbook.Names.push({Name:'VALLEYTRANS', Ref:'VALLEYTRANS!$A$2:$G$'+(data.length+1)});
+        }
     }
     buildPayEmSheets(wb, data) {
         // Sheet 1: PAYEMDATA (all)
@@ -615,21 +623,30 @@ class App {
         const ws = XLSX.utils.aoa_to_sheet(rows);
         ws['!cols'] = colWidths;
         if(mode === 'all') {
+            // PAYEMDATA: B,C,D=numbers, E=ref1(text), F=ref2(text), G=coa_cr(text), H=coa_dr(text), I=date
             for(let i=2;i<=rows.length;i++) {
                 ['B','C','D'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
-                if(ws['E'+i] && ws['E'+i].v != null) { ws['E'+i].t='n'; }
-                if(ws['F'+i] && ws['F'+i].v != null) { ws['F'+i].t='s'; ws['F'+i].v = String(ws['F'+i].v); }
+                ['E','F','G','H'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='s'; ws[col+i].v=String(ws[col+i].v); ws[col+i].z='@'; } });
                 if(ws['I'+i] && ws['I'+i].v instanceof Date) { ws['I'+i].t='d'; ws['I'+i].z='dd/mm/yyyy'; }
             }
         } else {
+            // Pekuda: B,C=numbers, D=ref1(text), E=ref2(text), F=coa_cr(text), G=coa_dr(text), H=date
             for(let i=2;i<=rows.length;i++) {
                 ['B','C'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='n'; ws[col+i].z='#,##0.00'; } });
-                if(ws['D'+i] && ws['D'+i].v != null) { ws['D'+i].t='n'; }
-                if(ws['E'+i] && ws['E'+i].v != null) { ws['E'+i].t='s'; ws['E'+i].v = String(ws['E'+i].v); }
+                ['D','E','F','G'].forEach(col => { if(ws[col+i] && ws[col+i].v != null) { ws[col+i].t='s'; ws[col+i].v=String(ws[col+i].v); ws[col+i].z='@'; } });
                 if(ws['H'+i] && ws['H'+i].v instanceof Date) { ws['H'+i].t='d'; ws['H'+i].z='dd/mm/yyyy'; }
             }
         }
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        // Named range for data area
+        if(data.length > 0) {
+            if(!wb.Workbook) wb.Workbook = {};
+            if(!wb.Workbook.Names) wb.Workbook.Names = [];
+            const nameMap = {'PAYEMDATA':'PAYEMDATA','פקודה INC':'PEKUDA_INC','רישום LTD':'RISHUM_LTD','נגדית לINC של LTD':'NEGDIT_LTD'};
+            const rangeName = nameMap[sheetName] || sheetName;
+            const lastCol = mode === 'all' ? 'J' : 'I';
+            wb.Workbook.Names.push({Name:rangeName, Ref:sheetName+'!$A$2:$'+lastCol+'$'+(data.length+1)});
+        }
     }
     updateHistoryPanel() {
         const stats = this.storage.getStats();

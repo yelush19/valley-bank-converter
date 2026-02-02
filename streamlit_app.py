@@ -6,6 +6,8 @@ import json
 from datetime import datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, PatternFill, numbers
+from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.utils import get_column_letter, quote_sheetname
 
 # ===== PAGE CONFIG =====
 st.set_page_config(page_title="ממיר תנועות בנק ואשראי", page_icon="🏦", layout="wide")
@@ -233,6 +235,22 @@ def analyze_duplicates(file_type, transactions, history):
 
 # ===== EXCEL BUILDER =====
 
+def _format_text_col(ws, col, min_row, max_row):
+    """Format a column as text (@ format) with string values."""
+    for row in ws.iter_rows(min_row=min_row, max_row=max_row, min_col=col, max_col=col):
+        for cell in row:
+            if cell.value is not None:
+                cell.value = str(cell.value)
+                cell.number_format = '@'
+
+
+def _add_named_range(wb, name, ws_title, min_col, min_row, max_col, max_row):
+    """Add a named range (not table) to workbook."""
+    ref = f"{quote_sheetname(ws_title)}!${get_column_letter(min_col)}${min_row}:${get_column_letter(max_col)}${max_row}"
+    dn = DefinedName(name, attr_text=ref)
+    wb.defined_names.add(dn)
+
+
 def build_valley_excel(data):
     """Build Valley Bank Excel with VALLEYTRANS sheet."""
     wb = Workbook()
@@ -258,6 +276,10 @@ def build_valley_excel(data):
         for cell in row:
             cell.number_format = '#,##0.00'
 
+    # Format CoA columns as text (F=coa_debit, G=coa_credit)
+    _format_text_col(ws, 6, 2, ws.max_row)  # F = ח"ן חובה
+    _format_text_col(ws, 7, 2, ws.max_row)  # G = ח"ן זכות
+
     # Column widths
     ws.column_dimensions["A"].width = 12
     ws.column_dimensions["B"].width = 42
@@ -266,6 +288,10 @@ def build_valley_excel(data):
     ws.column_dimensions["E"].width = 28
     ws.column_dimensions["F"].width = 12
     ws.column_dimensions["G"].width = 12
+
+    # Named range for data area (excluding header)
+    if len(data) > 0:
+        _add_named_range(wb, "VALLEYTRANS", "VALLEYTRANS", 1, 2, 7, ws.max_row)
 
     return wb
 
@@ -381,16 +407,26 @@ def _add_payem_sheet(wb, data, sheet_name, mode):
                 t["ref1"], t["ref2"], coa_cr, coa_dr, t["date"], t["subsidiary"]
             ])
 
-    # Format number columns
+    # Format columns based on mode
     if mode == "all":
-        num_cols = (2, 4)  # B, C, D
-        date_col = 9       # I
-        ref2_col = 6       # F
+        # PAYEMDATA: A=desc, B=txn_amt, C=credit, D=debit, E=ref1, F=ref2, G=coa_cr, H=coa_dr, I=date, J=sub
+        num_cols = (2, 4)   # B,C,D = numbers
+        ref1_col = 5        # E
+        ref2_col = 6        # F
+        coa_cr_col = 7      # G
+        coa_dr_col = 8      # H
+        date_col = 9        # I
+        total_cols = 10
         col_widths = {"A": 30, "B": 16, "C": 14, "D": 14, "E": 14, "F": 10, "G": 12, "H": 12, "I": 12, "J": 22}
     else:
-        num_cols = (2, 3)  # B, C
-        date_col = 8       # H
-        ref2_col = 5       # E
+        # Pekuda: A=desc, B=credit, C=debit, D=ref1, E=ref2, F=coa_cr, G=coa_dr, H=date, I=sub
+        num_cols = (2, 3)   # B,C = numbers
+        ref1_col = 4        # D
+        ref2_col = 5        # E
+        coa_cr_col = 6      # F
+        coa_dr_col = 7      # G
+        date_col = 8        # H
+        total_cols = 9
         col_widths = {"A": 30, "B": 14, "C": 14, "D": 14, "E": 10, "F": 12, "G": 12, "H": 12, "I": 22}
 
     for row in ws.iter_rows(min_row=2, min_col=num_cols[0], max_col=num_cols[1]):
@@ -403,13 +439,24 @@ def _add_payem_sheet(wb, data, sheet_name, mode):
             if isinstance(cell.value, datetime):
                 cell.number_format = 'DD/MM/YYYY'
 
-    for row in ws.iter_rows(min_row=2, min_col=ref2_col, max_col=ref2_col):
-        for cell in row:
-            if cell.value is not None:
-                cell.value = str(cell.value)
+    # Format ref1, ref2, CoA columns as text
+    _format_text_col(ws, ref1_col, 2, ws.max_row)
+    _format_text_col(ws, ref2_col, 2, ws.max_row)
+    _format_text_col(ws, coa_cr_col, 2, ws.max_row)
+    _format_text_col(ws, coa_dr_col, 2, ws.max_row)
 
     for col, w in col_widths.items():
         ws.column_dimensions[col].width = w
+
+    # Named range for data area (excluding header)
+    if len(data) > 0:
+        # Sanitize name: replace spaces and Hebrew with safe chars
+        safe_name = sheet_name.replace(" ", "_").replace('"', '')
+        # Named ranges must start with letter/underscore, only ASCII allowed
+        name_map = {"PAYEMDATA": "PAYEMDATA", "פקודה_INC": "PEKUDA_INC",
+                     "רישום_LTD": "RISHUM_LTD", "נגדית_לINC_של_LTD": "NEGDIT_LTD"}
+        range_name = name_map.get(safe_name, safe_name)
+        _add_named_range(wb, range_name, sheet_name, 1, 2, total_cols, ws.max_row)
 
 
 def workbook_to_bytes(wb):
@@ -835,22 +882,26 @@ def main():
 
         excel_bytes = workbook_to_bytes(wb)
 
-        col_dl, col_save = st.columns(2)
-        with col_dl:
-            st.download_button(
-                "הורד קובץ Excel",
-                excel_bytes,
-                filename,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-            )
+        # Auto-save to history when download button is clicked
+        def on_download():
+            keys = [t["key"] for t in data]
+            add_to_history(file_type, keys, uploaded_file.name)
 
-        with col_save:
-            if st.button("שמור בהיסטוריה"):
-                keys = [t["key"] for t in data]
-                add_to_history(file_type, keys, uploaded_file.name)
-                st.success(f"{len(data)} תנועות נשמרו בהיסטוריה!")
-                st.rerun()
+        st.download_button(
+            f"📥 הורד קובץ Excel + שמור בהיסטוריה ({len(data)} תנועות)",
+            excel_bytes,
+            filename,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            on_click=on_download,
+        )
+
+        # Show confirmation if already saved
+        if file_type in st.session_state["history"]:
+            saved_keys = st.session_state["history"][file_type].get("keys", {})
+            data_keys = {t["key"] for t in data}
+            if data_keys.issubset(set(saved_keys.keys())):
+                st.success("✅ תנועות אלו כבר שמורות בהיסטוריה")
 
 
 if __name__ == "__main__":
