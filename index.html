@@ -393,12 +393,14 @@ class DuplicateDetector {
 class AuthManager {
     constructor() {
         this.AUTH_KEY = 'vb_converter_auth';
-        // Default credentials (SHA-256 hash). Change password via: console → AuthManager.generateHash('yourpassword')
-        this.defaultUser = 'admin';
-        this.defaultHash = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'; // 'admin'
+        // Multiple users: {username: password_hash}
+        // To generate hash: AuthManager.generateHash('yourpassword').then(h=>console.log(h))
+        this.defaultUsers = {
+            'admin': '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+            'USER': 'c23879e4da979ce6f2a60c7330bf6e1476007c8d514c5c468121bb38011a7025'
+        };
     }
     static generateHash(password) {
-        // Helper: run in browser console to generate hash for a new password
         return crypto.subtle.digest('SHA-256', new TextEncoder().encode(password))
             .then(buf => Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join(''));
     }
@@ -413,13 +415,14 @@ class AuthManager {
         const user = document.getElementById('loginUser').value;
         const pass = document.getElementById('loginPass').value;
         const hash = await this.hashPassword(pass);
-        // Check stored credentials or default
-        const storedUser = localStorage.getItem('vb_auth_user') || this.defaultUser;
-        const storedHash = localStorage.getItem('vb_auth_hash') || this.defaultHash;
-        if(user === storedUser && hash === storedHash) {
+        // Check against all configured users
+        const users = JSON.parse(localStorage.getItem('vb_auth_users') || 'null') || this.defaultUsers;
+        if(users[user] && users[user] === hash) {
             sessionStorage.setItem(this.AUTH_KEY, 'true');
+            sessionStorage.setItem('vb_auth_user', user);
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('logoutBtn').classList.remove('hidden');
+            document.getElementById('logoutBtn').textContent = '🚪 התנתק (' + user + ')';
             document.getElementById('loginError').style.display = 'none';
         } else {
             document.getElementById('loginError').style.display = 'block';
@@ -427,6 +430,7 @@ class AuthManager {
     }
     logout() {
         sessionStorage.removeItem(this.AUTH_KEY);
+        sessionStorage.removeItem('vb_auth_user');
         document.getElementById('loginOverlay').classList.remove('hidden');
         document.getElementById('logoutBtn').classList.add('hidden');
         document.getElementById('loginUser').value = '';
@@ -436,6 +440,8 @@ class AuthManager {
         if(this.isAuthenticated()) {
             document.getElementById('loginOverlay').classList.add('hidden');
             document.getElementById('logoutBtn').classList.remove('hidden');
+            const user = sessionStorage.getItem('vb_auth_user') || '';
+            if(user) document.getElementById('logoutBtn').textContent = '🚪 התנתק (' + user + ')';
         }
     }
 }

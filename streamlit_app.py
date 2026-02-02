@@ -710,13 +710,13 @@ def learn_coa_from_excel(file_bytes):
 # ===== AUTH =====
 
 def check_auth():
-    """Simple password authentication using st.secrets."""
+    """Simple password authentication using st.secrets. Supports multiple users."""
     if st.session_state.get("authenticated"):
         return True
 
     # Check if secrets are configured
     try:
-        _ = st.secrets["auth"]["username"]
+        _ = st.secrets["auth"]["users"]
     except (KeyError, FileNotFoundError):
         # No secrets configured - skip auth (dev mode)
         st.session_state["authenticated"] = True
@@ -743,11 +743,12 @@ def check_auth():
             submitted = st.form_submit_button("התחבר", type="primary", use_container_width=True)
 
             if submitted:
-                expected_user = st.secrets["auth"]["username"]
-                expected_hash = st.secrets["auth"]["password_hash"]
+                users = st.secrets["auth"]["users"]
                 pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-                if username == expected_user and pwd_hash == expected_hash:
+                # Check against all configured users
+                if username in users and users[username]["password_hash"] == pwd_hash:
                     st.session_state["authenticated"] = True
+                    st.session_state["auth_user"] = username
                     st.rerun()
                 else:
                     st.error("שם משתמש או סיסמה שגויים")
@@ -802,9 +803,13 @@ def main():
     with st.sidebar:
         # Logout button (only if auth is configured)
         try:
-            _ = st.secrets["auth"]["username"]
+            _ = st.secrets["auth"]["users"]
+            auth_user = st.session_state.get("auth_user", "")
+            if auth_user:
+                st.markdown(f"👤 **{auth_user}**")
             if st.button("🚪 התנתק", type="secondary", use_container_width=True):
                 st.session_state["authenticated"] = False
+                st.session_state.pop("auth_user", None)
                 st.rerun()
             st.divider()
         except (KeyError, FileNotFoundError):
