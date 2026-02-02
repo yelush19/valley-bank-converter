@@ -125,7 +125,13 @@
             <div class="preview-table"><table id="previewTable"><thead id="previewHead"></thead><tbody id="previewBody"></tbody></table></div>
         </div>
         <div style="text-align:center;margin:20px 0;">
-            <button class="btn btn-orange hidden" id="downloadBtn" onclick="app.downloadExcel()">הורד קובץ Excel</button>
+            <button class="btn btn-orange hidden" id="downloadBtn" onclick="app.downloadExcel()">📥 הורד קובץ Excel</button>
+            <button class="btn btn-green hidden" id="saveHistoryBtn" onclick="app.confirmSaveHistory()">💾 הורדתי בהצלחה - שמור בהיסטוריה</button>
+            <div id="historySavedMsg" class="status-message success" style="display:none;"></div>
+        </div>
+        <div id="redownloadSection" class="status-message warning" style="display:none;">
+            כל התנועות כבר עובדו בעבר.
+            <button class="btn btn-sm btn-orange" onclick="app.enableRedownload()">הורד מחדש (למקרה שההורדה נכשלה)</button>
         </div>
         <div class="history-panel" id="historyPanel">
             <h3 onclick="document.getElementById('historyPanel').classList.toggle('collapsed')">היסטוריית עיבוד ואחסון</h3>
@@ -434,14 +440,32 @@ class App {
                     document.getElementById('newCountLabel').textContent = this.dedupResult.stats.new + ' חדשות';
                     document.getElementById('dupCountLabel').textContent = this.dedupResult.stats.dup + ' כבר עובדו';
                     di.style.display = 'block';
-                    document.getElementById('processOptions').style.display = 'block';
-                    document.getElementById('processBtn').classList.remove('hidden');
-                    this.showMsg('הקובץ נטען! נמצאו '+this.allParsed.length+' תנועות ('+this.newOnly.length+' חדשות)','success');
+                    // Hide redownload/saveHistory from previous runs
+                    document.getElementById('redownloadSection').style.display = 'none';
+                    document.getElementById('saveHistoryBtn').classList.add('hidden');
+                    document.getElementById('historySavedMsg').style.display = 'none';
+                    if(this.dedupResult.stats.new === 0) {
+                        // All already processed - show re-download option
+                        document.getElementById('processOptions').style.display = 'none';
+                        document.getElementById('processBtn').classList.add('hidden');
+                        document.getElementById('redownloadSection').style.display = 'block';
+                        this.showMsg('כל התנועות כבר עובדו בעבר','warning');
+                    } else {
+                        document.getElementById('processOptions').style.display = 'block';
+                        document.getElementById('processBtn').classList.remove('hidden');
+                        this.showMsg('הקובץ נטען! נמצאו '+this.allParsed.length+' תנועות ('+this.newOnly.length+' חדשות)','success');
+                    }
                 },
                 error: err => this.showMsg('שגיאה: '+err.message,'error')
             });
         };
         reader.readAsText(file, 'UTF-8');
+    }
+    enableRedownload() {
+        // User wants to re-download already processed transactions
+        document.getElementById('redownloadSection').style.display = 'none';
+        document.getElementById('newOnlyCheck').checked = false;
+        this.processData();
     }
     processData() {
         this.setStep(2);
@@ -450,6 +474,7 @@ class App {
         pb.style.display = 'block'; pf.style.width = '30%';
         const newOnlyChecked = document.getElementById('newOnlyCheck').checked;
         const data = newOnlyChecked ? this.newOnly : this.allParsed;
+        this.lastProcessedData = data;
         setTimeout(() => {
             pf.style.width = '70%';
             this.displayStats(data);
@@ -535,12 +560,10 @@ class App {
             const allOk = c.countOk && c.debitOk && c.creditOk;
             this.showMsg(msg, allOk ? 'success' : 'error');
         } else {
-            this.showMsg('הקובץ הורד בהצלחה! '+data.length+' תנועות','success');
+            this.showMsg('הקובץ הורד! לחץ "שמור בהיסטוריה" לאחר שווידאת שההורדה הצליחה','info');
         }
-        // Save processed keys to history
-        const keys = data.map(t => t.key);
-        this.storage.addKeys(this.detectedType, keys, this.fileName);
-        this.updateHistoryPanel();
+        // Show save-to-history button (don't auto-save!)
+        document.getElementById('saveHistoryBtn').classList.remove('hidden');
     }
     buildValleySheet(wb, data) {
         const rows = [['תאריך','תיאור','חובה','זכות','קטגוריה','ח"ן חובה','ח"ן זכות']];
@@ -647,6 +670,18 @@ class App {
             const lastCol = mode === 'all' ? 'J' : 'I';
             wb.Workbook.Names.push({Name:rangeName, Ref:sheetName+'!$A$2:$'+lastCol+'$'+(data.length+1)});
         }
+    }
+    confirmSaveHistory() {
+        const data = this.lastProcessedData || (document.getElementById('newOnlyCheck').checked ? this.newOnly : this.allParsed);
+        if(!data || !data.length) { this.showMsg('אין תנועות לשמור','warning'); return; }
+        const keys = data.map(t => t.key);
+        this.storage.addKeys(this.detectedType, keys, this.fileName);
+        this.updateHistoryPanel();
+        document.getElementById('saveHistoryBtn').classList.add('hidden');
+        const msg = document.getElementById('historySavedMsg');
+        msg.textContent = '✅ ' + data.length + ' תנועות נשמרו בהיסטוריה!';
+        msg.style.display = 'block';
+        this.showMsg(data.length + ' תנועות נשמרו בהיסטוריה','success');
     }
     updateHistoryPanel() {
         const stats = this.storage.getStats();

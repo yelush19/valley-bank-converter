@@ -780,12 +780,18 @@ def main():
         col3.metric("כבר עובדו", len(dupes))
 
         # Process options
-        new_only = st.checkbox("עבד רק תנועות חדשות (דלג על כפילויות)", value=True)
-        data = new_txns if new_only else all_parsed
-
-        if not data:
-            st.warning("אין תנועות חדשות לעיבוד")
-            return
+        if len(new_txns) == 0:
+            # ALL transactions already processed - show re-download option
+            st.warning("כל התנועות כבר עובדו בעבר")
+            redownload = st.checkbox("הורד מחדש את כל התנועות (למקרה שההורדה הקודמת נכשלה)", value=False)
+            if not redownload:
+                return
+            data = all_parsed
+        elif len(dupes) > 0:
+            new_only = st.checkbox("עבד רק תנועות חדשות (דלג על כפילויות)", value=True)
+            data = new_txns if new_only else all_parsed
+        else:
+            data = all_parsed
 
         # ===== PREVIEW TABLE =====
         st.subheader("תצוגה מקדימה")
@@ -882,26 +888,30 @@ def main():
 
         excel_bytes = workbook_to_bytes(wb)
 
-        # Auto-save to history when download button is clicked
-        def on_download():
-            keys = [t["key"] for t in data]
-            add_to_history(file_type, keys, uploaded_file.name)
+        # Check if these transactions are already saved
+        saved_keys = st.session_state["history"].get(file_type, {}).get("keys", {})
+        data_keys = {t["key"] for t in data}
+        already_saved = data_keys.issubset(set(saved_keys.keys()))
 
+        # Step 1: Download Excel
         st.download_button(
-            f"📥 הורד קובץ Excel + שמור בהיסטוריה ({len(data)} תנועות)",
+            f"📥 הורד קובץ Excel ({len(data)} תנועות)",
             excel_bytes,
             filename,
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             type="primary",
-            on_click=on_download,
         )
 
-        # Show confirmation if already saved
-        if file_type in st.session_state["history"]:
-            saved_keys = st.session_state["history"][file_type].get("keys", {})
-            data_keys = {t["key"] for t in data}
-            if data_keys.issubset(set(saved_keys.keys())):
-                st.success("✅ תנועות אלו כבר שמורות בהיסטוריה")
+        # Step 2: Confirm save to history (separate action)
+        if already_saved:
+            st.success("✅ תנועות אלו כבר שמורות בהיסטוריה")
+        else:
+            st.info("⚠️ לאחר שווידאת שהקובץ הורד בהצלחה - לחץ לשמור בהיסטוריה:")
+            if st.button("💾 הורדתי בהצלחה - שמור בהיסטוריה", type="secondary"):
+                keys = [t["key"] for t in data]
+                add_to_history(file_type, keys, uploaded_file.name)
+                st.success(f"✅ {len(data)} תנועות נשמרו בהיסטוריה!")
+                st.rerun()
 
 
 if __name__ == "__main__":
